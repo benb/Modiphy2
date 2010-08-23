@@ -163,14 +163,17 @@ abstract class Alphabet{
   def length:Int
 }
 
-abstract class SimpleLikelihoodCalc(tree:Tree,m:Model){
+object LikelihoodTypes{
   type Pattern=Leaf=>Letter
   type PartialLikelihoods = IndexedSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
   type Matrix = IndexedSeq[IndexedSeq[Double]]
+}
+import LikelihoodTypes._
 
-
+abstract class SimpleLikelihoodCalc(tree:Tree,m:Model){
+  
   var cache = Map[(RootedTreePosition,Seq[Letter]),PartialLikelihoods]()
 
 
@@ -209,40 +212,36 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:Model){
   def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood
 }
 
-
-abstract class LikelihoodCalculator(t:Tree,m:Model){
-  var cache=Map[Edge,Likelihoods]()
-  type PartialLikelihoods = Seq[IndexedSeq[Double]]
-  type Likelihoods = IndexedSeq[Double]
-  type LogLikelihoods = IndexedSeq[Double]
-  type Matrix = IndexedSeq[IndexedSeq[Double]]
-
-  def partialLikelihoods(n:Node):PartialLikelihoods={
-    combinePartialLikelihoods( (t children n).map{partialLikelihoods} )
-  }
-  def partialLikelihoods(e:Edge):PartialLikelihoods={
-    partialLikelihoodCalc(partialLikelihoods(e.right),matrix(e))
-  }
-  def logLikelihoods(root:Node,pi:IndexedSeq[Double]):LogLikelihoods={ finalLikelihoods(partialLikelihoods(root),pi).map{math.log} }
-
-
-  def updated(edge:Edge){cache = cache - edge;(t ancestralTo edge).foreach{e=> cache = cache - e}}
-  def updated{cache=Map[Edge,Likelihoods]()}
-
-  def matrix(edge:Edge):Matrix
-  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
+trait LikelihoodEngine{
   def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods
-  def finalLikelihoods(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihoods
+  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
+  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood
 }
-
-trait ColtLikelihoodCalc{
+trait ColtLikelihoodCalc extends LikelihoodEngine{
   import cern.colt.matrix._
   val func = new cern.colt.function.DoubleDoubleFunction{def apply(x:Double,y:Double)=x*y}
   val fact1D = cern.colt.matrix.DoubleFactory1D.dense
   val fact2D = cern.colt.matrix.DoubleFactory2D.dense
 
+  implicit def Seq2Vec(s:IndexedSeq[Double])=fact1D.make(s.toArray)
+  implicit def Vec2Seq(v:DoubleMatrix1D)=v.toArray.toIndexedSeq
+  implicit def Seq2Mat(s:IndexedSeq[IndexedSeq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
+  implicit def Mat2Seq(m:DoubleMatrix2D)=m.toArray.map{_.toIndexedSeq}.toIndexedSeq
 
-  def partialLikelihoodCalc(end:List[DoubleMatrix1D],matrix:DoubleMatrix2D)={
+ 
+  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods = {
+    val myInter = intermediates.map{p:PartialLikelihoods=>List(Seq2Vec(p))}
+    coltCombinePartialLikelihoods(myInter).head
+  }
+  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods={
+    coltPartialLikelihoodCalc(List(Seq2Vec(end)),matrix).head
+  }
+  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood={
+    coltLikelihoods(List(Seq2Vec(partial)),pi).head
+  }
+
+
+  def coltPartialLikelihoodCalc(end:List[DoubleMatrix1D],matrix:DoubleMatrix2D)={
     val width = matrix.rows
     val rows = new Array[DoubleMatrix1D](width)
     (0 until width).foreach{i=> rows(i)=matrix viewRow i}
@@ -255,7 +254,7 @@ trait ColtLikelihoodCalc{
         ret
       }
   }
-  def combinePartialLikelihoods(intermediates:List[List[DoubleMatrix1D]])={
+  def coltCombinePartialLikelihoods(intermediates:List[List[DoubleMatrix1D]])={
     val ans = intermediates.head
     intermediates.tail.foreach{list2=>
       ans.zip(list2).map{t=> // not really a map but used for parallel reasons
@@ -267,7 +266,7 @@ trait ColtLikelihoodCalc{
 
   }
 
-  def likelihoods(partial:List[DoubleMatrix1D],pi:Seq[Double])={
+  def coltLikelihoods(partial:List[DoubleMatrix1D],pi:Seq[Double])={
     partial.map{vec=>
       val ans = pi.iterator.zipWithIndex.map{t=>
         val(p,i)=t

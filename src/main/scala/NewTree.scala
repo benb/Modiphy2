@@ -1,9 +1,12 @@
 package modiphy.tree
 import scala.collection.immutable.Map.WithDefault
+import modiphy.util.Memo
 
 
-abstract class Node
-case class Leaf(name:String) extends Node
+abstract class Node{
+ def id:Option[String]=None
+}
+case class Leaf(name:String) extends Node{override val id=Some(name)}
 case class Edge(left:Node,right:Node,dist:Double){
   def hasNode(n:Node) = {left==n || right==n}
   def traverse(n:Node)=n match {
@@ -33,16 +36,80 @@ object TreeTest{
 }
 
 object Tree{
-  def apply(edges:List[Edge],nodes:Set[Node],edgeMap:Map[Node,List[Edge]]):Tree=new Tree(edges,nodes,edgeMap)
+  def apply(edges:IndexedSeq[Edge],nodes:Set[Node],edgeMap:Map[Node,List[Edge]]):Tree=new Tree(edges,nodes,edgeMap)
   def apply(edges:List[Edge]):Tree={
     val edgeMap = edges.foldLeft(new WithDefault(Map[Node,List[Edge]](),{n:Node=>List[Edge]()})){(m,e)=> m updated (e.left,e::m(e.left)) updated (e.right,e::m(e.right))}
-    Tree(edges,edges.foldLeft(Set[Node]()){(s,e)=>(s+e.left)+e.right},edgeMap)
+    Tree(edges.toIndexedSeq,edges.foldLeft(Set[Node]()){(s,e)=>(s+e.left)+e.right},edgeMap)
+  }
+  def apply(newick:String):Tree = {
+    new TreeParser{def parseAll=parse(tree,newick)}.parseAll.get
   }
 }
-class Tree(edges:List[Edge],nodes:Set[Node],edgeMap:Map[Node,List[Edge]]){
+
+trait TreePosition{
+  val get:Node
+  val neighbours:Seq[TreePosition]
+}
+trait RootedTreePosition extends TreePosition{
+  val children:Seq[TreePositionDir]
+  val neighbours:Seq[TreePosition] = children
+}
+trait TreePositionDir extends RootedTreePosition{
+  val upEdge:Edge
+}
+
+class Tree(edges:IndexedSeq[Edge],
+  nodes:Set[Node],
+  edgeMap:Map[Node,List[Edge]],
+  startiNodes:Option[Set[INode]] = None,
+  root:Option[Node]=None,
+  startLabels:Option[Map[String,Node]] = None){
+
+  lazy val branchLength = edges.map{_.dist}.toIndexedSeq
+
+
+  
+
+  val iNodes = startiNodes.getOrElse(nodes.filter{_.isInstanceOf[INode]}.map{_.asInstanceOf[INode]})
+  val leafNodes = nodes.filter{_.isInstanceOf[Leaf]}.map{_.asInstanceOf[Leaf]}
+  def defaultRoot = root getOrElse iNodes.head
+  val labels = startLabels getOrElse nodes.foldLeft(Map[String,Node]()){(m,n)=> if (n.id.isDefined){m updated (n.id.get,n)}else{m}}
+
+  def traverseFrom(n:Node):Option[TreePosition]=Some(new TreePosition{
+    val get = n
+    lazy val neighbours = edgeMap(n).map{e=>traverseFrom(e from n right).get}
+  })
+
+  def traverseFrom(s:String):Option[TreePosition]={
+    if (labels contains s){
+      traverseFrom(labels(s))
+    }else {
+      None
+    }
+  }
+
+  def traverseDown(n:Node,dir:Edge):TreePositionDir={
+    new TreePositionDir{
+      val get = n
+      lazy val children = edgeMap(n).filter{e=> ! (e same dir)}.map{e=>traverseDown(e from n right,e)}
+      val upEdge = dir
+    }
+  }
+
+
+  def copy(
+    newEdges:IndexedSeq[Edge] = edges,
+    newNode:Set[Node] = nodes,
+    newEdgeMap:Map[Node,List[Edge]] = edgeMap,
+    newINodes:Option[Set[INode]] = Some(iNodes),
+    root:Option[Node] = Some(defaultRoot)
+  ) = new Tree(newEdges,newNode,newEdgeMap,newINodes,root)
+  def reRoot(n:Node)=copy(root=Some(n))
+  def setBranchLength(i:Int,d:Double)={
+    copy(newEdges = edges.updated(i,edges(i).copy(dist=d)))
+  }
+
   def treeLength = edges.map{_.dist}.foldLeft(0.0D){_+_}
-  lazy val iNodes = nodes.filter{_.isInstanceOf[INode]}
-  def defaultRoot = iNodes.head
   def getEdges=edgeMap
   def getEdgesTo(n:Node)=edgeMap(n).map{e=>e to n}
   def children(n:Node,dir:Option[Edge]=None)=dir match {
@@ -57,9 +124,22 @@ class Tree(edges:List[Edge],nodes:Set[Node],edgeMap:Map[Node,List[Edge]]){
     
   def ancestralTo(e:Edge):Set[Edge]=ancestralTo(e.left,e)
 
-  override def toString = toString(defaultRoot)
+  override def toString = toString(defaultRoot) + ";"
 
-  def toString(node:Node,direction:Option[Edge]=None):String = { println(node + getEdges(node).map{e=> e from node}.mkString(" "))
+  lazy val leaves:Memo[(Node,Edge),Seq[Leaf]]=new Memo[(Node,Edge),Seq[Leaf]]({t=>val (n,e)=t
+    n match {
+      case l:Leaf=>Vector(l)
+      case n:Node=>traverseDown(n,e).children.map{tp:TreePositionDir=> leaves((tp.get,tp.upEdge))}.foldLeft(Vector[Leaf]()){_++_}
+    }
+  })
+  def leaves(treePos:TreePositionDir):Seq[Leaf]=leaves(treePos.get,treePos.upEdge)
+  def leaves(treePos:RootedTreePosition):Seq[Leaf]=
+    treePos match {
+      case tP:TreePositionDir => leaves(tP.get,tP.upEdge)
+      case root:RootedTreePosition => leafNodes.toList
+    }
+
+  def toString(node:Node,direction:Option[Edge]=None):String = { 
    (node,direction) match { 
     case (n:INode,None) => "("+getEdges(node).map{e=>toString(e from n)}.mkString(",")+")"
     case (n:INode,Some(dir)) => "("+getEdges(node).filter{e=> !(e same dir)}.map{e=>toString(e from n)}.mkString(",")+")"
@@ -67,10 +147,69 @@ class Tree(edges:List[Edge],nodes:Set[Node],edgeMap:Map[Node,List[Edge]]){
    }}
 
   def toString(edge:Edge):String = toString(edge.right,Some(edge)) + ":" + edge.dist
+
 }
 
 
-class Model
+trait Model{
+  def apply(e:Edge):IndexedSeq[IndexedSeq[Double]]
+  def pi(n:Node):IndexedSeq[Double]
+}
+abstract class Letter{
+  def toInt:Int
+  def alphabet:Alphabet
+}
+abstract class Alphabet{
+  def length:Int
+}
+
+abstract class SimpleLikelihoodCalc(tree:Tree,m:Model){
+  type Pattern=Leaf=>Letter
+  type PartialLikelihoods = IndexedSeq[Double]
+  type Likelihood = Double
+  type LogLikelihood = Double
+  type Matrix = IndexedSeq[IndexedSeq[Double]]
+
+
+  var cache = Map[(RootedTreePosition,Seq[Letter]),PartialLikelihoods]()
+
+
+  def partialLikelihoods(treePos:RootedTreePosition,p:Pattern):PartialLikelihoods={
+    val myPatterns = tree.leaves(treePos).map{p}
+    if (cache contains ((treePos,myPatterns))){
+      cache((treePos,myPatterns))
+    }else {
+    val ans = treePos.get match {
+      case n:INode=>
+        combinePartialLikelihoods(
+          treePos.children.toList.map{tp=>
+          val plStart = partialLikelihoods(tp,p)
+          //calculate PL along branch
+          partialLikelihoodCalc(plStart,m(tp.upEdge)) 
+          }
+        )
+      case l:Leaf=>leafPartialLikelihoods(p(l))
+    }
+        
+    cache = cache updated ((treePos,myPatterns),ans)
+    ans
+    }
+  }
+
+  def likelihood(root:RootedTreePosition,p:Pattern):Likelihood={
+     finalLikelihood(partialLikelihoods(root,p),m.pi(root.get))
+  }
+  def leafPartialLikelihoods(l:Letter):PartialLikelihoods = {
+    val empty = Vector.fill(l.alphabet.length)(0.0)
+    empty updated (l.toInt,1.0)
+  }
+
+  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods
+  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
+  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood
+}
+
+
 abstract class LikelihoodCalculator(t:Tree,m:Model){
   var cache=Map[Edge,Likelihoods]()
   type PartialLikelihoods = Seq[IndexedSeq[Double]]

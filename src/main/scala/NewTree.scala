@@ -1,6 +1,8 @@
 package modiphy.tree
 import scala.collection.immutable.Map.WithDefault
 import modiphy.util.Memo
+import modiphy.alignment._
+import modiphy.alignment.GlobalAlphabet._
 
 
 abstract class Node{
@@ -155,13 +157,6 @@ trait Model{
   def apply(e:Edge):IndexedSeq[IndexedSeq[Double]]
   def pi(n:Node):IndexedSeq[Double]
 }
-abstract class Letter{
-  def toInt:Int
-  def alphabet:Alphabet
-}
-abstract class Alphabet{
-  def length:Int
-}
 
 object LikelihoodTypes{
   type Pattern=Leaf=>Letter
@@ -204,7 +199,7 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:Model){
   }
   def leafPartialLikelihoods(l:Letter):PartialLikelihoods = {
     val empty = Vector.fill(l.alphabet.length)(0.0)
-    empty updated (l.toInt,1.0)
+    empty updated (l.id,1.0)
   }
 
   def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods

@@ -47,7 +47,7 @@ class AlignmentSuite extends FunSuite {
     >Thermosynech
     GFITQVIGPVVDIEF
     """
-    val aln = new Fasta(alnStr.lines).toAlignment(AminoAcid)
+    val aln = new Fasta(alnStr.lines).parseWith(AminoAcid)
     aln("Synechocysti").head should be (AminoAcid.G)
     aln.columns.drop(3).head.apply("Gloeobacter") should be (AminoAcid.T)
   }

@@ -1,50 +1,44 @@
 package modiphy.alignment
 import scala.collection.immutable.VectorBuilder
 
-object GlobalAlphabet{
-  case class EnhancedLetter[A<:Alphabet](l:A#Value,a:A){
-    def id:Int=l.id
-    def alphabet:Alphabet=a
-    def isReal=a.isReal(l.asInstanceOf[a.Value])
-  }
+abstract class Alphabet(names:String*) extends Enumeration(names :_*) {
+  import GlobalAlphabet._
+  class Letter(name:String,val alphabet:Alphabet) extends Val(nextId,name)
+  def Letter = new Letter(if (nextName.hasNext) nextName.next else null,this)
+  def unknown:Letter
+  def isReal(v:Letter):Boolean
+  def matElements:Seq[Letter]
+  val length = matElements.length
+  def gap:Letter
+  def parseString(s:String):IndexedSeq[Letter]
+}
 
-  private var letterMap=Map[Alphabet#Value,EnhancedLetter[_]]()
-  def addNew(a:Alphabet){
-    a.values.foreach{v=>
-      letterMap = letterMap updated (v,EnhancedLetter(v,a))
-    }
+
+object GlobalAlphabet{
+  type Letter=Alphabet#Letter
+  case class EnhancedLetter[A<:Alphabet](l:A#Letter){
+    def isReal=l.alphabet.isReal(l.asInstanceOf[l.alphabet.Letter])
   }
-  implicit def MakeLetter(l:Alphabet#Value)=letterMap(l)
-  type Letter=Alphabet#Value
+  implicit def MakeLetter(l:Alphabet#Letter)=EnhancedLetter(l)
 }
 
 import GlobalAlphabet._
 
-abstract class Alphabet(names:String*) extends Enumeration(names :_*) {
-  import GlobalAlphabet._
-  addNew(this)
-  def unknown:Value
-  def isReal(v:Value):Boolean
-  def matElements:Seq[Value]
-  val length = matElements.length
-  def gap:Value
-  def parseString(s:String):IndexedSeq[Value]
-}
 
 object DNA extends Alphabet("A","G","C","T","N","-"){
-  val A,G,C,T,N,GAP=Value
-  def isReal(v:Value)={v!=N && v!=GAP}
-  def parseString(s:String)=s.map{i=> values.find(v=>v.toString==i.toString).getOrElse(N)}.foldLeft(new VectorBuilder[Value]){_ += _}.result
+  val A,G,C,T,N,GAP=Letter
+  def isReal(v:Letter)={v!=N && v!=GAP}
+  def parseString(s:String)=s.map{i=> values.find(v=>v.toString==i.toString).getOrElse(N)}.foldLeft(new VectorBuilder[Letter]){_ += _.asInstanceOf[Letter]}.result
   def matElements=List(A,G,C,T)
   val unknown=N
   val gap=GAP
 }
 
 object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V","X","-"){
-  val A,R,N,D,C,Q,E,G,H,I,L,K,M,F,P,S,T,W,Y,V,X,GAP=Value
-  override def isReal(a:Value)=((a!=X) && (a!=GAP))
+  val A,R,N,D,C,Q,E,G,H,I,L,K,M,F,P,S,T,W,Y,V,X,GAP=Letter
+  override def isReal(a:Letter)=((a!=X) && (a!=GAP))
   def matElements=List(A,R,N,D,C,Q,E,G,H,I,L,K,M,F,P,S,T,W,Y,V)
-  def parseString(s:String)=s.map{i=> values.find(v=>v.toString==i.toString).getOrElse(X)}.toIndexedSeq
+  def parseString(s:String)=s.map{i=> values.find(v=>v.toString==i.toString).getOrElse(X)}.map{_.asInstanceOf[Letter]}.toIndexedSeq
   val unknown=X
   val gap=GAP
 }
@@ -69,12 +63,16 @@ class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{
     (name,seq)
   }
   def hasNext = iter.hasNext
-  def toAlignment(alphabet:Alphabet)={
+  def parseWith(alphabet:Alphabet)={
     val map = this.foldLeft(Map[String,Seq[Letter]]()){(m,t)=>
       m updated (t._1,alphabet.parseString(t._2)) 
     }
     new Aligmment(map)
   }
+}
+object Fasta{
+  def apply(source:Iterator[String])=new Fasta(source)
+  def apply(source:String)=new Fasta(source.lines)
 }
 
 

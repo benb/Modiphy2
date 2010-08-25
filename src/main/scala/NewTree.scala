@@ -2,6 +2,7 @@ package modiphy.tree
 import scala.collection.immutable.Map.WithDefault
 import modiphy.util.Memo
 import modiphy.alignment._
+import modiphy.model._
 import modiphy.alignment.GlobalAlphabet._
 
 
@@ -50,11 +51,11 @@ object Tree{
 
 trait TreePosition{
   val get:Node
-  val neighbours:Seq[TreePosition]
+  def neighbours:Seq[TreePosition]
 }
 trait RootedTreePosition extends TreePosition{
   val children:Seq[TreePositionDir]
-  val neighbours:Seq[TreePosition] = children
+  def neighbours:Seq[TreePosition] = children
 }
 trait TreePositionDir extends RootedTreePosition{
   val upEdge:Edge
@@ -74,7 +75,7 @@ class Tree(edges:IndexedSeq[Edge],
 
   val iNodes = startiNodes.getOrElse(nodes.filter{_.isInstanceOf[INode]}.map{_.asInstanceOf[INode]})
   val leafNodes = nodes.filter{_.isInstanceOf[Leaf]}.map{_.asInstanceOf[Leaf]}
-  def defaultRoot = root getOrElse iNodes.head
+  val defaultRoot = root getOrElse iNodes.head
   val labels = startLabels getOrElse nodes.foldLeft(Map[String,Node]()){(m,n)=> if (n.id.isDefined){m updated (n.id.get,n)}else{m}}
 
   def traverseFrom(n:Node):Option[TreePosition]=Some(new TreePosition{
@@ -98,6 +99,12 @@ class Tree(edges:IndexedSeq[Edge],
     }
   }
 
+  def traverseDown(n:Node):RootedTreePosition={
+    new RootedTreePosition{
+      val get = n
+      lazy val children = edgeMap(n).map{e=>traverseDown(e from n right,e)}
+    }
+  }
 
   def copy(
     newEdges:IndexedSeq[Edge] = edges,
@@ -153,13 +160,9 @@ class Tree(edges:IndexedSeq[Edge],
 }
 
 
-trait Model{
-  def apply(e:Edge):IndexedSeq[IndexedSeq[Double]]
-  def pi(n:Node):IndexedSeq[Double]
-}
 
 object LikelihoodTypes{
-  type Pattern=Leaf=>Letter
+  type Pattern=String=>Letter
   type PartialLikelihoods = IndexedSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
@@ -168,39 +171,42 @@ object LikelihoodTypes{
 import LikelihoodTypes._
 
 abstract class SimpleLikelihoodCalc(tree:Tree,m:Model){
-  
+
   var cache = Map[(RootedTreePosition,Seq[Letter]),PartialLikelihoods]()
 
 
-  def partialLikelihoods(treePos:RootedTreePosition,p:Pattern):PartialLikelihoods={
-    val myPatterns = tree.leaves(treePos).map{p}
+    def partialLikelihoods(treePos:RootedTreePosition,p:Pattern):PartialLikelihoods={
+    val myPatterns = tree.leaves(treePos).map{leaf=>p(leaf.id.get)}
     if (cache contains ((treePos,myPatterns))){
       cache((treePos,myPatterns))
     }else {
-    val ans = treePos.get match {
-      case n:INode=>
+      val ans = treePos.get match {
+        case n:INode=>
         combinePartialLikelihoods(
           treePos.children.toList.map{tp=>
           val plStart = partialLikelihoods(tp,p)
-          //calculate PL along branch
+            //calculate PL along branch
           partialLikelihoodCalc(plStart,m(tp.upEdge)) 
-          }
-        )
-      case l:Leaf=>leafPartialLikelihoods(p(l))
-    }
-        
-    cache = cache updated ((treePos,myPatterns),ans)
-    ans
-    }
+        }
+      )
+    case l:Leaf=>leafPartialLikelihoods(p(l.id.get))
+  }
+
+  cache = cache updated ((treePos,myPatterns),ans)
+  ans
+}
   }
 
   def likelihood(root:RootedTreePosition,p:Pattern):Likelihood={
-     finalLikelihood(partialLikelihoods(root,p),m.pi(root.get))
+    finalLikelihood(partialLikelihoods(root,p),m.pi(root.get))
   }
-  def leafPartialLikelihoods(l:Letter):PartialLikelihoods = {
-    val empty = Vector.fill(l.alphabet.length)(0.0)
-    empty updated (l.id,1.0)
+  def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
+   p.map{likelihood(root,_)}.foldLeft(0.0D){_+math.log(_)}
   }
+  def leafPartialLikelihoods(l:Letter):PartialLikelihoods = l match {
+      case a if (a.isReal) => Vector.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
+      case a => Vector.fill(l.alphabet.length)(1.0)
+    }
 
   def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods
   def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
@@ -215,14 +221,8 @@ trait LikelihoodEngine{
 trait ColtLikelihoodCalc extends LikelihoodEngine{
   import cern.colt.matrix._
   val func = new cern.colt.function.DoubleDoubleFunction{def apply(x:Double,y:Double)=x*y}
-  val fact1D = cern.colt.matrix.DoubleFactory1D.dense
-  val fact2D = cern.colt.matrix.DoubleFactory2D.dense
 
-  implicit def Seq2Vec(s:IndexedSeq[Double])=fact1D.make(s.toArray)
-  implicit def Vec2Seq(v:DoubleMatrix1D)=v.toArray.toIndexedSeq
-  implicit def Seq2Mat(s:IndexedSeq[IndexedSeq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
-  implicit def Mat2Seq(m:DoubleMatrix2D)=m.toArray.map{_.toIndexedSeq}.toIndexedSeq
-
+  import modiphy.math.EnhancedMatrix._
  
   def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods = {
     val myInter = intermediates.map{p:PartialLikelihoods=>List(Seq2Vec(p))}

@@ -100,7 +100,7 @@ class Gamma(numCat:Int){
     gamma(shape)
   }
   def gamma(shape:Double):IndexedSeq[Double]={
-    if (shape==Math.POS_INF_DOUBLE){
+    if (shape==Double.PositiveInfinity){
       (0 until numCat).map{a=>1.0}
     }else {
       val alpha = shape

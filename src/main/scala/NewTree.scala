@@ -279,7 +279,7 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
   }
 
   def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
-   likelihoods(p,root).reduceLeft{_+math.log(_)}
+   likelihoods(p,root).foldLeft(0.0D){_+math.log(_)}
   }
   def leafPartialLikelihoods(l:Letter):PartialLikelihoods = l match {
       case a if (a.isReal) => Vector.fill(l.alphabet.length)(0.0).updated(l.id,1.0)

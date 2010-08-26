@@ -32,7 +32,7 @@ trait StdMixtureModel extends Model{
   def priors:IndexedSeq[Double]
 }
 trait Exp{
-  def apply(bl:Double,rate:Double=1.0)=exp(bl*rate)
+  def apply(bl:Double,rate:Double=1.0)=expInt(bl*rate)
   lazy val expInt:Memo[Double,Matrix]=Memo[Double,Matrix]({bl=>
     exp(bl)
   })

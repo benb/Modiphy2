@@ -33,6 +33,7 @@ trait ColtModel extends StdModel{
   val u = eigen.getV
   val v = algebra.inverse(u)
   val d = eigen.getD
+  println("Mat " +mat)
 
   def exp(bl:Double):Matrix= algebra.mult(algebra.mult(u,expVals(d,bl)),v)
 

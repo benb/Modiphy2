@@ -50,9 +50,8 @@ class ColtExp(mat:Matrix) extends Exp{
   val u = eigen.getV
   val v = algebra.inverse(u)
   val d = eigen.getD
-  println("Mat " +mat)
 
-  def exp(bl:Double):Matrix= { val ans = algebra.mult(algebra.mult(u,expVals(d,bl)),v);println("E " + bl + " " + ans);ans} 
+  def exp(bl:Double):Matrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
 }
 abstract class ExpFactory{
   def apply(mat:Matrix)=make(mat)

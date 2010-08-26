@@ -240,7 +240,7 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
    def cacheLookup(pos:RootedTreePosition,pattern:Seq[Letter])={
      cache.get(pos) match {
        case None=>None
-       case Some(m2)=>println("HIT! " + pos); m2 get pattern
+       case Some(m2)=>m2 get pattern
      }
    }
    def cacheAdd(pos:RootedTreePosition,pattern:Seq[Letter],pl:PartialLikelihoods)={

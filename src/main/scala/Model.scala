@@ -35,7 +35,33 @@ trait ColtModel extends StdModel{
   val d = eigen.getD
   println("Mat " +mat)
 
-  def exp(bl:Double):Matrix= algebra.mult(algebra.mult(u,expVals(d,bl)),v)
+  def exp(bl:Double):Matrix= { val ans = algebra.mult(algebra.mult(u,expVals(d,bl)),v);println("E " + bl + " " + ans);ans} 
+}
+abstract class ExpFactory{
+  def apply(mat:Matrix)=make(mat)
+  def make(mat:Matrix):Exp
+}
+abstract class CachingExpFactory extends ExpFactory{
+  val cache:Function[Matrix,Exp]=LRUMemo[Matrix,Exp](50)({mat=>
+    make(mat) 
+  })
+  override def apply(mat:Matrix)=cache(mat)
+}
+object ColtExpFactory extends CachingExpFactory{
+  def make(mat:Matrix)=new ColtExp(mat)
+}
+object DefaultExpFactory extends ExpFactory{
+  var default:ExpFactory=ColtExpFactory
+  def make(mat:Matrix)=default.apply(mat)
+  def setDefault(fact:ExpFactory){default=fact}
+}
+
+class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],rate:Double=1.0,fact:ExpFactory=DefaultExpFactory) extends StdModel{
+  val mat = s.sToQ(piValues,rate)
+  def pi(n:Node) = piValues
+  val exp=DefaultExpFactory.apply(mat)
+}
+>>>>>>> 3e29c6d... More debugging
 
 }
 

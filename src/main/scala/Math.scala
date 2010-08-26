@@ -1,14 +1,14 @@
 package modiphy.math
 class EnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
   implicit def MakeEnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]])=new EnhancedMatrix(mat)
-  def sToQ(pi:IndexedSeq[Double])={
+  def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
     IndexedSeq.tabulate(mat.length,mat.head.length){(i,j)=>
       if (j>i){
         mat(j)(i)*pi(j)
       }else{
         mat(i)(j)*pi(j)
       }
-    }.fixDiag.normalise(pi)
+    }.fixDiag.normalise(pi,rate)
   }
   def fixDiag={
     mat.zipWithIndex.map{t=> val (row,i)=t
@@ -21,10 +21,10 @@ class EnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
       row(i)
     }
   }
-  def normalise(pi:IndexedSeq[Double])={
+  def normalise(pi:IndexedSeq[Double],rate:Double=1.0)={
     val zSum = mat.diag.zip(pi).map{t=>t._1*t._2}.sum
     mat.map{row=>
-      row.map{_ / -zSum}
+      row.map{_ / -zSum * rate}
     }
   }
 }

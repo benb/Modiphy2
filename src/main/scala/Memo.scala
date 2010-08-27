@@ -5,9 +5,11 @@ trait Memo[A,B] extends Function[A,B]{
 }
 class PermMemo[A, B](f:A=>B) extends Memo[A,B]{
   var map=Map[A,B]()
-  def apply(a:A)={
+  def apply(a:A)=Symbol(a.hashCode.toString).synchronized{
     if (map contains a){map(a)}
-    else {val ans = f(a);map=map updated (a,ans);ans}
+    else {val ans = f(a);
+    map.synchronized{map=map updated (a,ans)}
+    ans}
   }
 }
 class LRUMemo[A,B](size:Int,f:A=>B) extends Memo[A,B]{
@@ -17,6 +19,31 @@ class LRUMemo[A,B](size:Int,f:A=>B) extends Memo[A,B]{
     else {val ans = f(a);map+=((a,ans));ans}
   }
 }
+
+class ParallelMemo[A,B](f:A=>B) extends Memo[A,B]{
+  import scala.actors.Futures
+  import scala.actors.Future
+  var map=Map[A,Future[B]]()
+  object Sync
+  def future(a:A):Future[B]={
+    if (map contains a){map(a)}
+    else {
+      Sync.synchronized{
+        if (map contains a){map(a)} //check again in case of race condition
+        else {
+          val task = Futures.future{f(a)}
+          map = map updated (a,task)
+          task
+        }
+      }
+    }
+  }
+  def apply(a:A):B={
+    future(a).apply()
+  }
+  
+}
+
 class CacheMap[A,B](defaultSize:Int) extends scala.collection.mutable.Map[A,B]{
   val map = new org.apache.commons.collections.LRUMap(defaultSize)
     def get(a:A)={   

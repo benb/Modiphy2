@@ -225,13 +225,16 @@ object ColtLikelihoodFactory extends LikelihoodFactory{
   def apply(tree:Tree,model:SingleModel)=new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
 }
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:List[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
+class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
+  import scala.actors.Futures.future
   val lklCalc = lkl.getOrElse{m.map{DefaultLikelihoodFactory(tree,_)}}
   
   def logLikelihood(patterns:Seq[Pattern])={
       patterns.map{pattern=>
-         lklCalc.zip(priors).map{t=> t._1.likelihood(pattern)}
+       future{
+         lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
        }
+     }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
   }
 }
 abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]] = Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]()){
@@ -252,6 +255,7 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
 
    
     def partialLikelihoods(treePos:RootedTreePosition,p:Pattern):PartialLikelihoods={
+      import scala.actors.Futures.future
       val myPatterns = tree.leaves(treePos).map{leaf=>p(leaf.id.get)}
       cacheLookup(treePos,myPatterns).getOrElse{
         val ans = treePos.get match {
@@ -259,7 +263,6 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
             combinePartialLikelihoods(
               treePos.children.toList.map{tp=>
               val plStart = partialLikelihoods(tp,p)
-              //calculate PL along branch
               partialLikelihoodCalc(plStart,m(tp.upEdge)) 
             }
           )
@@ -275,7 +278,9 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
     finalLikelihood(partialLikelihoods(root,p),m.pi(root.get))
   }
   def likelihoods(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
-   p.map{likelihood(_,root)}
+    import scala.actors.Futures._
+    p.map{pat=>future{likelihood(pat,root)}}.map{_()}
+//    p.map{pat=>likelihood(pat,root)}
   }
 
   def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={

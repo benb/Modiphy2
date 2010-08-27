@@ -50,7 +50,6 @@ class ColtExp(mat:Matrix) extends Exp{
   val u = eigen.getV
   val v = algebra.inverse(u)
   val d = eigen.getD
-  println("Mat " +mat)
 
   def exp(bl:Double):Matrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
 }
@@ -81,7 +80,7 @@ class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[D
 
 class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int) extends StdMixtureModel{
   lazy val gamma = new Gamma(numCat).apply(alpha)
-  val models = gamma.map{new BasicLikelihoodModel(piValues,s,_)}
+  val models:Seq[StdModel] = gamma.map{new BasicLikelihoodModel(piValues,s,_)}
   val priors = Vector.fill(numCat)(1.0/numCat)
 }
 

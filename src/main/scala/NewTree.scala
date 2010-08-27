@@ -7,6 +7,9 @@ import modiphy.alignment.GlobalAlphabet._
 import modiphy.util.Memo
 
 
+object Parallel{
+  val on = false
+}
 abstract class Node{
  def id:Option[String]=None
 }
@@ -45,7 +48,7 @@ object TreeTest{
     val aln = Fasta(alnStr).parseWith(AminoAcid)
     val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
 
-    (0 until 50).foreach{i=>
+    (0 until 500).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
       println(lkl.logLikelihood(aln.columns))
     }
@@ -244,10 +247,18 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:
   
   def logLikelihood(patterns:Seq[Pattern])={
       patterns.map{pattern=>
+      if (Parallel.on){
        future{
          lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
        }
      }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
+   }else {
+     if (Parallel.on){
+       future{
+         lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
+       }
+     }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
+   }
   }
 }
 abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]] = Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]()){
@@ -292,8 +303,8 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
   }
   def likelihoods(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
     import scala.actors.Futures._
-    p.map{pat=>future{likelihood(pat,root)}}.map{_()}
-//    p.map{pat=>likelihood(pat,root)}
+    if (Parallel.on){  p.map{pat=>future{likelihood(pat,root)}}.map{_()}}
+    else {p.map{pat=>likelihood(pat,root)}}
   }
 
   def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={

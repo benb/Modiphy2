@@ -6,9 +6,16 @@ import modiphy.util._
 
 object Types{
   type Matrix=IndexedSeq[IndexedSeq[Double]]
-  type Vector=IndexedSeq[Double]
 }
 import Types._
+
+case class ParamName(i:Int)
+sealed abstract class Restriction
+case class LowerBound(d:Double) extends Restriction
+case class UpperBound(d:Double) extends Restriction
+case object SumToOne extends Restriction
+case object LowerTriagonalMatrix extends Restriction
+case class ParamHandle[A](p:ParamName,param:A,restrictions:Seq[Restriction])
 
 trait Model{
 }

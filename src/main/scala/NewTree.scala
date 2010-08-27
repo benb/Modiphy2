@@ -30,12 +30,25 @@ class INode extends Node
 
 object TreeTest{
   def main(args:Array[String]){
+    /*
     val iNode1 = new INode
     val iNode2 = new INode
     val tree = Tree(Edge(Leaf("human"),iNode1,0.10) :: Edge(Leaf("chimp"),iNode1,0.12) :: Edge(iNode1,iNode2,0.21) :: Edge(iNode2,Leaf("gorilla"),0.31) :: Nil)
 
     println(tree)
     println(tree.treeLength)
+    */
+    import modiphy.test.ModelData._
+    import modiphy.math.constants._
+
+    val tree = Tree(treeStr)
+    val aln = Fasta(alnStr).parseWith(AminoAcid)
+    val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
+
+    (0 until 50).foreach{i=>
+      val lkl = new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
+      println(lkl.logLikelihood(aln.columns))
+    }
   }
 }
 
@@ -307,6 +320,10 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
       }
     }
     factory(t,m,updatedCache)
+  }
+
+  def update(m:SingleModel)={
+    factory(tree,m,Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]())
   }
 }
 

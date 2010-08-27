@@ -1,4 +1,5 @@
 package modiphy.math
+import scala.collection.LinearSeq
 class EnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
   implicit def MakeEnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]])=new EnhancedMatrix(mat)
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
@@ -37,11 +38,21 @@ class EnhancedVector(seq:IndexedSeq[Double]){
   def sum = seq.reduceLeft{_+_}
   def dotProduct(vect:IndexedSeq[Double])=seq.zip(vect).map{t=>t._1*t._2}.reduceLeft{_+_}
 }
+class EnhancedListVector(seq:LinearSeq[Double]){
+  def normalize = normalise
+  def normalise = {
+    val mySum = sum
+    seq.map{i=> i/sum}
+  }
+  def sum = seq.reduceLeft{_+_}
+  def dotProduct(vect:IndexedSeq[Double])=seq.zip(vect).map{t=>t._1*t._2}.reduceLeft{_+_}
+}
 
 object EnhancedMatrix{
   import cern.colt.matrix._
   implicit def MakeEnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]])=new EnhancedMatrix(mat)
-  implicit def MakeEnhancedVector(mat:IndexedSeq[Double])=new EnhancedVector(mat)
+  implicit def MakeEnhancedVector(vec:IndexedSeq[Double])=new EnhancedVector(vec)
+  implicit def MakeEnhancedListVector(vec:LinearSeq[Double])=new EnhancedListVector(vec)
   lazy val fact1D = cern.colt.matrix.DoubleFactory1D.dense
   lazy val fact2D = cern.colt.matrix.DoubleFactory2D.dense
   lazy val sparse = cern.colt.matrix.DoubleFactory2D.sparse

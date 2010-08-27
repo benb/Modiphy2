@@ -48,7 +48,7 @@ object TreeTest{
     val aln = Fasta(alnStr).parseWith(AminoAcid)
     val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
 
-    (0 until 500).foreach{i=>
+    (0 until 50).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model,engine=IndexedSeqLikelihoodFactory.apply)
       println(lkl.logLikelihood(aln.columns))
     }
@@ -271,16 +271,20 @@ import engine.partialLikelihoodCalc
 import engine.finalLikelihood
 
    def cacheLookup(pos:RootedTreePosition,pattern:Seq[Letter])={
+     /*
      cache.get(pos) match {
        case None=>None
        case Some(m2)=>m2 get pattern
-     }
+     }*/
+     None
    }
    def cacheAdd(pos:RootedTreePosition,pattern:Seq[Letter],pl:PartialLikelihoods)={
+     /*
      cache.get(pos) match {
        case None=>cache updated (pos,Map(pattern->pl))
        case Some(m2)=>cache updated (pos,m2 updated (pattern,pl))
-     }
+     }*/
+     cache
    }
 
    
@@ -317,9 +321,9 @@ import engine.finalLikelihood
    likelihoods(p,root).foldLeft(0.0D){_+math.log(_)}
   }
   def leafPartialLikelihoods(l:Letter):PartialLikelihoods = l match {
-      case a if (a.isReal) => Vector.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
-      case a => Vector.fill(l.alphabet.length)(1.0)
-    }
+    case a if (a.isReal) => Vector.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
+    case a => Vector.fill(l.alphabet.length)(1.0)
+  }
 
 
   def factory(t:Tree,m:SingleModel,cache:Cache) = new SimpleLikelihoodCalc(t,m,cache)

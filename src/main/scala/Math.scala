@@ -45,7 +45,7 @@ class EnhancedListVector(seq:LinearSeq[Double]){
     seq.map{i=> i/sum}
   }
   def sum = seq.reduceLeft{_+_}
-  def dotProduct(vect:IndexedSeq[Double])=seq.zip(vect).map{t=>t._1*t._2}.reduceLeft{_+_}
+  def dotProduct(vect:Seq[Double])=seq.zip(vect).map{t=>t._1*t._2}.reduceLeft{_+_}
 }
 
 object EnhancedMatrix{
@@ -58,8 +58,9 @@ object EnhancedMatrix{
   lazy val sparse = cern.colt.matrix.DoubleFactory2D.sparse
 
   //lazy initial pass at these methods
-  implicit def Seq2Vec(s:IndexedSeq[Double])=fact1D.make(s.toArray)
+  implicit def Seq2Vec(s:Seq[Double])=fact1D.make(s.toArray)
   implicit def Vec2Seq(v:DoubleMatrix1D)=v.toArray.toIndexedSeq
+  implicit def Vec2LinearSeq(v:DoubleMatrix1D)=v.toArray.toList
   implicit def Seq2Mat(s:IndexedSeq[IndexedSeq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
   implicit def Mat2Seq(m:DoubleMatrix2D)=m.toArray.map{_.toIndexedSeq}.toIndexedSeq
 }

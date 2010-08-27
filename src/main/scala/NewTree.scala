@@ -5,10 +5,11 @@ import modiphy.alignment._
 import modiphy.model._
 import modiphy.alignment.GlobalAlphabet._
 import modiphy.util.Memo
+import scala.collection.LinearSeq
 
 
 object Parallel{
-  val on = false
+  val on = true
 }
 abstract class Node{
  def id:Option[String]=None
@@ -218,7 +219,7 @@ class Tree(edges:IndexedSeq[Edge],
 
 object LikelihoodTypes{
   type Pattern=String=>Letter
-  type PartialLikelihoods = IndexedSeq[Double]
+  type PartialLikelihoods = LinearSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
   type Matrix = IndexedSeq[IndexedSeq[Double]]
@@ -313,7 +314,9 @@ import engine.finalLikelihood
   }
   def likelihoods(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
     import scala.actors.Futures._
-    if (Parallel.on){  p.map{pat=>future{likelihood(pat,root)}}.map{_()}}
+    if (Parallel.on){ 
+      p.grouped(300).toList.map{subList=>future{subList.map{pat=>likelihood(pat,root)}}}.map{_()}.flatten
+    }
     else {p.map{pat=>likelihood(pat,root)}}
   }
 
@@ -321,8 +324,8 @@ import engine.finalLikelihood
    likelihoods(p,root).foldLeft(0.0D){_+math.log(_)}
   }
   def leafPartialLikelihoods(l:Letter):PartialLikelihoods = l match {
-    case a if (a.isReal) => Vector.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
-    case a => Vector.fill(l.alphabet.length)(1.0)
+    case a if (a.isReal) => List.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
+    case a => List.fill(l.alphabet.length)(1.0)
   }
 
 
@@ -417,13 +420,13 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
   }
   def combinePartialLikelihoods(intermediates:List[PartialLikelihoods],ans:List[Double]):PartialLikelihoods={
     if (intermediates.head.isEmpty){
-      ans.reverse.toIndexedSeq
+      ans.reverse.toList
     }else {
       combinePartialLikelihoods(intermediates.map{_.tail},intermediates.map{_.head}.product::ans)
     }
   }
   def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods={
-    matrix.map{end.dotProduct}
+    matrix.map{end.dotProduct}.toList
   }
   def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood={
     coltLikelihoods(List(Seq2Vec(partial)),pi).head

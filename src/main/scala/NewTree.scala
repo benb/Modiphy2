@@ -49,7 +49,7 @@ object TreeTest{
     val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
 
     (0 until 500).foreach{i=>
-      val lkl = new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
+      val lkl = new SimpleLikelihoodCalc(tree,model,engine=IndexedSeqLikelihoodFactory.apply)
       println(lkl.logLikelihood(aln.columns))
     }
   }
@@ -230,20 +230,24 @@ object SimpleLikelihoodCalc{
 }
 
 trait LikelihoodFactory{
-  def apply(tree:Tree,model:SingleModel):SimpleLikelihoodCalc
+  def apply:LikelihoodEngine
 }
 object DefaultLikelihoodFactory{
-  var default:LikelihoodFactory = ColtLikelihoodFactory
-  def apply(tree:Tree,model:SingleModel)=ColtLikelihoodFactory.apply(tree,model)
+  var default:LikelihoodFactory = IndexedSeqLikelihoodFactory
+  def apply = default.apply
   def setDefault(lkl:LikelihoodFactory){default=lkl}
 }
 object ColtLikelihoodFactory extends LikelihoodFactory{
-  def apply(tree:Tree,model:SingleModel)=new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
+  def apply=new ColtLikelihoodCalc
 }
+object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
+  def apply=new IndexedSeqLikelihoodCalc
+}
+
 
 class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
   import scala.actors.Futures.future
-  val lklCalc = lkl.getOrElse{m.map{DefaultLikelihoodFactory(tree,_)}}
+  val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_)}}
   
   def logLikelihood(patterns:Seq[Pattern])={
     if (Parallel.on){
@@ -259,8 +263,12 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:
    }
   }
 }
-abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]] = Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]()){
+class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]] = Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]](),val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply){
   import SimpleLikelihoodCalc._
+
+import engine.combinePartialLikelihoods
+import engine.partialLikelihoodCalc
+import engine.finalLikelihood
 
    def cacheLookup(pos:RootedTreePosition,pattern:Seq[Letter])={
      cache.get(pos) match {
@@ -313,10 +321,8 @@ abstract class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[Roote
       case a => Vector.fill(l.alphabet.length)(1.0)
     }
 
-  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods
-  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
-  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood
-  def factory(t:Tree,m:SingleModel,cache:Cache):SimpleLikelihoodCalc
+
+  def factory(t:Tree,m:SingleModel,cache:Cache) = new SimpleLikelihoodCalc(t,m,cache)
 
   def update(t:Tree)={
     val updatedCache = tree.differences(t).foldLeft(cache){(c2,e)=>
@@ -341,15 +347,13 @@ trait LikelihoodEngine{
   def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
   def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood
 }
-trait ColtLikelihoodCalc extends LikelihoodEngine{
+class ColtLikelihoodCalc extends LikelihoodEngine{
   import SimpleLikelihoodCalc.Cache
   import cern.colt.matrix._
   val func = new cern.colt.function.DoubleDoubleFunction{def apply(x:Double,y:Double)=x*y}
 
   import modiphy.math.EnhancedMatrix._
 
-  def factory(t:Tree,m:SingleModel,cache:Cache) = new SimpleLikelihoodCalc(t,m,cache) with ColtLikelihoodCalc
- 
   def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods = {
     val myInter = intermediates.map{p:PartialLikelihoods=>List(Seq2Vec(p))}
     coltCombinePartialLikelihoods(myInter).head
@@ -398,4 +402,38 @@ trait ColtLikelihoodCalc extends LikelihoodEngine{
   }
 }
 
+class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
+  import SimpleLikelihoodCalc.Cache
+  import cern.colt.matrix._
 
+  import modiphy.math.EnhancedMatrix._
+
+  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods = {
+    combinePartialLikelihoods(intermediates,List[Double]())
+  }
+  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods],ans:List[Double]):PartialLikelihoods={
+    if (intermediates.head.isEmpty){
+      ans.reverse.toIndexedSeq
+    }else {
+      combinePartialLikelihoods(intermediates.map{_.tail},intermediates.map{_.head}.product::ans)
+    }
+  }
+  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods={
+    matrix.map{end.dotProduct}
+  }
+  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood={
+    coltLikelihoods(List(Seq2Vec(partial)),pi).head
+  }
+
+  
+
+  def coltLikelihoods(partial:List[DoubleMatrix1D],pi:Seq[Double])={
+    partial.map{vec=>
+      val ans = pi.iterator.zipWithIndex.map{t=>
+        val(p,i)=t
+        vec.get(i)*p
+      }.foldLeft(0.0D){_+_}
+      ans
+    }
+  }
+}

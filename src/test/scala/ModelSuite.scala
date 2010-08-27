@@ -23,19 +23,21 @@ class ModelSuite extends FunSuite {
     /*
     (0 to 50).foreach{i=>
       val tree = Tree(treeStr)
-      val lkl = new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
+      val lkl = new SimpleLikelihoodCalc(tree,model) 
     
       lkl.logLikelihood(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
     }*/
-    val lkl = new SimpleLikelihoodCalc(tree,model) with ColtLikelihoodCalc
+    for (factory <- ColtLikelihoodFactory::IndexedSeqLikelihoodFactory::Nil){
+      val lkl = new SimpleLikelihoodCalc(tree,model,engine=factory.apply) 
+      lkl.logLikelihood(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
+      val tree2 = tree setBranchLength (2,2.0)
+      lkl update tree2 logLikelihood aln.columns should be < (-6057.892394)
+      val tree3 = tree setBranchLength (2, tree.getBranchLength(2))
+      lkl update tree2 update tree3 logLikelihood aln.columns should be (-6057.892394 plusOrMinus 0.001) 
+    }
     
-    lkl.logLikelihood(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
    
-    val tree2 = tree setBranchLength (2,2.0)
-    lkl update tree2 logLikelihood aln.columns should be < (-6057.892394)
-    val tree3 = tree setBranchLength (2, tree.getBranchLength(2))
-    lkl update tree2 update tree3 logLikelihood aln.columns should be (-6057.892394 plusOrMinus 0.001) 
-  }
+      }
   test("Gamma mixture model should match PAML"){
     val model = new GammaModel(WAG.pi,WAG.S,0.5,numCat=4)
     val tree = Tree(treeStr)

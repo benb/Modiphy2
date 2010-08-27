@@ -35,6 +35,7 @@ class EnhancedVector(seq:IndexedSeq[Double]){
     seq.map{i=> i/sum}
   }
   def sum = seq.reduceLeft{_+_}
+  def dotProduct(vect:IndexedSeq[Double])=seq.zip(vect).map{t=>t._1*t._2}.reduceLeft{_+_}
 }
 
 object EnhancedMatrix{

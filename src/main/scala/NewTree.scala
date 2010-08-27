@@ -246,18 +246,16 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:
   val lklCalc = lkl.getOrElse{m.map{DefaultLikelihoodFactory(tree,_)}}
   
   def logLikelihood(patterns:Seq[Pattern])={
+    if (Parallel.on){
       patterns.map{pattern=>
-      if (Parallel.on){
-       future{
+          future{
+           lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
+          }
+        }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
+     } else {
+      patterns.map{pattern=>
          lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
-       }
-     }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
-   }else {
-     if (Parallel.on){
-       future{
-         lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
-       }
-     }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
+     }.map{f=>math.log(f)}.foldLeft(0.0D){_+_}
    }
   }
 }
@@ -399,3 +397,5 @@ trait ColtLikelihoodCalc extends LikelihoodEngine{
     }
   }
 }
+
+

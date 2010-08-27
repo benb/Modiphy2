@@ -2,10 +2,11 @@ package modiphy.model
 import modiphy.math.EnhancedMatrix._
 import modiphy.tree._
 import modiphy.util._
+import scala.collection.LinearSeq
 
 
 object Types{
-  type Matrix=IndexedSeq[IndexedSeq[Double]]
+  type Matrix=LinearSeq[LinearSeq[Double]]
 }
 import Types._
 
@@ -79,13 +80,13 @@ object DefaultExpFactory extends ExpFactory{
   def setDefault(fact:ExpFactory){default=fact}
 }
 
-class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],rate:Double=1.0,fact:ExpFactory=DefaultExpFactory) extends StdModel{
+class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:LinearSeq[LinearSeq[Double]],rate:Double=1.0,fact:ExpFactory=DefaultExpFactory) extends StdModel{
   val mat = s.sToQ(piValues,rate)
   def pi(n:Node) = piValues
   val exp=DefaultExpFactory.apply(mat)
 }
 
-class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int) extends StdMixtureModel{
+class GammaModel(piValues:IndexedSeq[Double],s:LinearSeq[LinearSeq[Double]],alpha:Double,numCat:Int) extends StdMixtureModel{
   lazy val gamma = new Gamma(numCat).apply(alpha)
   val models:Seq[StdModel] = gamma.map{new BasicLikelihoodModel(piValues,s,_)}
   val priors = Vector.fill(numCat)(1.0/numCat)

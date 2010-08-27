@@ -1,9 +1,10 @@
 package modiphy.math
 import scala.collection.LinearSeq
-class EnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
-  implicit def MakeEnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]])=new EnhancedMatrix(mat)
+class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
+  implicit def MakeEnhancedMatrix(mat:LinearSeq[LinearSeq[Double]])=new EnhancedMatrix(mat)
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
-    IndexedSeq.tabulate(mat.length,mat.head.length){(i,j)=>
+    //fixme
+    List.tabulate(mat.length,mat.head.length){(i,j)=>
       if (j>i){
         mat(j)(i)*pi(j)
       }else{
@@ -50,7 +51,7 @@ class EnhancedListVector(seq:LinearSeq[Double]){
 
 object EnhancedMatrix{
   import cern.colt.matrix._
-  implicit def MakeEnhancedMatrix(mat:IndexedSeq[IndexedSeq[Double]])=new EnhancedMatrix(mat)
+  implicit def MakeEnhancedMatrix(mat:LinearSeq[LinearSeq[Double]])=new EnhancedMatrix(mat)
   implicit def MakeEnhancedVector(vec:IndexedSeq[Double])=new EnhancedVector(vec)
   implicit def MakeEnhancedListVector(vec:LinearSeq[Double])=new EnhancedListVector(vec)
   lazy val fact1D = cern.colt.matrix.DoubleFactory1D.dense
@@ -59,8 +60,8 @@ object EnhancedMatrix{
 
   //lazy initial pass at these methods
   implicit def Seq2Vec(s:Seq[Double])=fact1D.make(s.toArray)
-  implicit def Vec2Seq(v:DoubleMatrix1D)=v.toArray.toIndexedSeq
-  implicit def Vec2LinearSeq(v:DoubleMatrix1D)=v.toArray.toList
-  implicit def Seq2Mat(s:IndexedSeq[IndexedSeq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
-  implicit def Mat2Seq(m:DoubleMatrix2D)=m.toArray.map{_.toIndexedSeq}.toIndexedSeq
+  implicit def Vec2Seq(v:DoubleMatrix1D)=v.toArray.toList
+ // implicit def Vec2LinearSeq(v:DoubleMatrix1D)=v.toArray.toList
+  implicit def Seq2Mat(s:LinearSeq[LinearSeq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
+  implicit def Mat2Seq(m:DoubleMatrix2D)=m.toArray.map{_.toList}.toList
 }

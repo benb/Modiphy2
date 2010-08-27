@@ -34,7 +34,7 @@ object TriangularMatrix{
     (1 to size).reverse.map{i=>
       val start = (0 until size-i).map{i=> vals.next} 
       val ans = start ++ ((size-i until size).map{i=>0.0D})//.toIndexedSeq
-      ans.toIndexedSeq
-  }.toIndexedSeq
+      ans.toList
+  }.toList
 }
 }

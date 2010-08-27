@@ -9,7 +9,7 @@ import scala.collection.LinearSeq
 
 
 object Parallel{
-  val on = true
+  val on = false
 }
 abstract class Node{
  def id:Option[String]=None
@@ -222,7 +222,7 @@ object LikelihoodTypes{
   type PartialLikelihoods = LinearSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
-  type Matrix = IndexedSeq[IndexedSeq[Double]]
+  type Matrix = LinearSeq[LinearSeq[Double]]
 }
 import LikelihoodTypes._
 

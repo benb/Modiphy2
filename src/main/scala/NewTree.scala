@@ -89,6 +89,7 @@ trait RootedTreePosition extends TreePosition{
       case _ => false
     }
   }
+  val leaves:Seq[Leaf]
 }
 trait TreePositionDir extends RootedTreePosition{
   val upEdge:Edge
@@ -135,17 +136,21 @@ class Tree(edges:IndexedSeq[Edge],
   }
 
   def traverseDown(n:Node,dir:Edge):TreePositionDir={
+    val tree =this
     new TreePositionDir{
       val get = n
       lazy val children = edgeMap(n).filter{e=> ! (e same dir)}.map{e=>traverseDown(e from n right,e)}
       val upEdge = dir
+      val leaves = tree.leaves(n,dir)
     }
   }
 
   def traverseDown(n:Node):RootedTreePosition={
+    val tree =this
     new RootedTreePosition{
       val get = n
       lazy val children = edgeMap(n).map{e=>traverseDown(e from n right,e)}
+      val leaves = tree.leaves(n)
     }
   }
 
@@ -183,12 +188,14 @@ class Tree(edges:IndexedSeq[Edge],
 
   override def toString = toString(defaultRoot) + ";"
 
-  lazy val leaves:Memo[(Node,Edge),Seq[Leaf]]=Memo[(Node,Edge),Seq[Leaf]]({t=>val (n,e)=t
-    n match {
-      case l:Leaf=>Vector(l)
-      case n:Node=>traverseDown(n,e).children.map{tp:TreePositionDir=> leaves((tp.get,tp.upEdge))}.foldLeft(Vector[Leaf]()){_++_}
+  lazy val leafCache:Memo[(Node,Option[Edge]),Seq[Leaf]]=Memo[(Node,Option[Edge]),Seq[Leaf]]({t=>
+    t match {
+      case (l:Leaf,_)=>Vector(l)
+      case (n:Node,e)=>children(n,e).map{e=> leafCache((e from n right,Some(e)))}.foldLeft(Vector[Leaf]()){_++_}
     }
   })
+  def leaves(n:Node,e:Edge):Seq[Leaf]=leafCache(n,Some(e))
+  def leaves(n:Node):Seq[Leaf]=leafCache(n,None)
   def leaves(treePos:TreePositionDir):Seq[Leaf]=leaves(treePos.get,treePos.upEdge)
   def leaves(treePos:RootedTreePosition):Seq[Leaf]=
     treePos match {
@@ -272,26 +279,26 @@ import engine.partialLikelihoodCalc
 import engine.finalLikelihood
 
    def cacheLookup(pos:RootedTreePosition,pattern:Seq[Letter])={
+     None
      /*
      cache.get(pos) match {
        case None=>None
        case Some(m2)=>m2 get pattern
      }*/
-     None
    }
    def cacheAdd(pos:RootedTreePosition,pattern:Seq[Letter],pl:PartialLikelihoods)={
+     cache
      /*
      cache.get(pos) match {
        case None=>cache updated (pos,Map(pattern->pl))
        case Some(m2)=>cache updated (pos,m2 updated (pattern,pl))
      }*/
-     cache
    }
 
    
     def partialLikelihoods(treePos:RootedTreePosition,p:Pattern):PartialLikelihoods={
       import scala.actors.Futures.future
-      val myPatterns = tree.leaves(treePos).map{leaf=>p(leaf.id.get)}
+      val myPatterns = treePos.leaves.map{leaf=>p(leaf.id.get)}
       cacheLookup(treePos,myPatterns).getOrElse{
         val ans = treePos.get match {
           case n:INode=>
@@ -323,10 +330,10 @@ import engine.finalLikelihood
   def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
    likelihoods(p,root).foldLeft(0.0D){_+math.log(_)}
   }
-  def leafPartialLikelihoods(l:Letter):PartialLikelihoods = l match {
+  val leafPartialLikelihoods:Memo[Letter,PartialLikelihoods]=Memo[Letter,PartialLikelihoods](l=>l match {
     case a if (a.isReal) => List.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
     case a => List.fill(l.alphabet.length)(1.0)
-  }
+  })
 
 
   def factory(t:Tree,m:SingleModel,cache:Cache) = new SimpleLikelihoodCalc(t,m,cache)

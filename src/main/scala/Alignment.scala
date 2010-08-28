@@ -46,11 +46,17 @@ object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K
 
 class Aligmment(gen:Map[String,Iterable[Letter]]){
   val names = gen.keys.toList
-  val columns:Seq[Map[String,Letter]] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Map[String,Letter]]()){(ml,col)=>
+  type Pattern=Map[String,Letter]
+  val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Map[String,Letter]]()){(ml,col)=>
     names.zip(col).foldLeft(Map[String,Letter]()){(ml2,item)=>
       ml2 + item
     } :: ml
   }.reverse
+  lazy val patterns:Map[Pattern,Int]=columns.foldLeft(Map[Pattern,Int]()){(m,col)=>
+    m.updated(col,m.getOrElse(col,0)+1)
+  }
+  lazy val patternList=patterns.toList.map{_._1}
+  lazy val countList=patterns.toList.map{_._2}
   def apply(s:String)=gen(s)
 }
 

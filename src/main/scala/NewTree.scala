@@ -330,6 +330,9 @@ import engine.finalLikelihood
   def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
    likelihoods(p,root).foldLeft(0.0D){_+math.log(_)}
   }
+  def logLikelihoodAln(alignment:Aligmment,root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
+    likelihoods(alignment.patternList,root).zip(alignment.countList).map{t=>math.log(t._1)*t._2}.reduceLeft{_+_}
+  }
   val leafPartialLikelihoods:Memo[Letter,PartialLikelihoods]=Memo[Letter,PartialLikelihoods](l=>l match {
     case a if (a.isReal) => List.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
     case a => List.fill(l.alphabet.length)(1.0)

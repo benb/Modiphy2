@@ -51,7 +51,7 @@ object TreeTest{
 
     (0 until 50).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model,engine=IndexedSeqLikelihoodFactory.apply)
-      println(lkl.logLikelihood(aln.columns))
+      println(lkl.logLikelihoodAln(aln))
     }
   }
 }

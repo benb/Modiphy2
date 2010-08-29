@@ -436,7 +436,7 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
     }
   }
   def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods={
-    matrix.map{end.dotProduct}.toList
+    matrix.map{end.dotProduct}
   }
   def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood={
     coltLikelihoods(List(Seq2Vec(partial)),pi).head

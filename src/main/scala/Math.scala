@@ -50,9 +50,15 @@ class EnhancedListVector(seq:LinearSeq[Double]){
     seq.map{i=> i/sum}
   }
   def sum = seq.reduceLeft{_+_}
-  def dotProduct(vect:Seq[Double])={
+  def dotProduct(vect:LinearSeq[Double])={
     var ans = 0.0
-    seq.zip(vect).foreach{t=>ans = ans + t._1*t._2}
+    var l1 = vect
+    var l2 = seq
+    while (!(l1.isEmpty)){
+      ans = ans + l1.head * l2.head
+      l1 = l1.tail
+      l2 = l2.tail
+    }
     ans
   }
 }

@@ -322,7 +322,8 @@ import engine.finalLikelihood
   def likelihoods(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
     import scala.actors.Futures._
     if (Parallel.on){ 
-      p.grouped(300).toList.map{subList=>future{subList.map{pat=>likelihood(pat,root)}}}.map{_()}.flatten
+      p.grouped(30).toList.map{subList=>future{subList.map{pat=>likelihood(pat,root)}}}.map{_()}.flatten
+     // p.map{pat=>future{likelihood(pat,root)}}.map{_()}
     }
     else {p.map{pat=>likelihood(pat,root)}}
   }

@@ -49,7 +49,7 @@ object TreeTest{
     val aln = Fasta(alnStr).parseWith(AminoAcid)
     val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
 
-    (0 until 50).foreach{i=>
+    (0 until args(0).toInt).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model,engine=IndexedSeqLikelihoodFactory.apply)
       println(lkl.logLikelihoodAln(aln))
     }

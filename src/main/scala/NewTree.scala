@@ -79,27 +79,30 @@ trait RootedTreePosition extends TreePosition{
       bool || n==neighbour.get || neighbour.ancestralTo(n) //this last one could blow the stack....
     } 
   })
-  override def hashCode = children.map{_.hashCode}.foldLeft(get.hashCode + 41){(h1,child)=>
+  def hashCodeFunc:Int = children.map{_.hashCode}.foldLeft(get.hashCode + 41){(h1,child)=>
     h1 * 41 + child.hashCode
   }
+  override lazy val hashCode = hashCodeFunc
   override def equals(o:Any)={
     o match {
       case that:TreePositionDir=>false
-      case that:RootedTreePosition=>that.get==get && that.children==children
+      case that:RootedTreePosition=>that.get==get && (that.tree eq tree)
       case _ => false
     }
   }
+  val tree:Tree
   val leaves:Seq[Leaf]
 }
 trait TreePositionDir extends RootedTreePosition{
   val upEdge:Edge
-  override def hashCode = super.hashCode + upEdge.hashCode
+  override lazy val hashCode:Int = super.hashCodeFunc + 41 * upEdge.hashCode
   override def equals(o:Any)={
     o match {
-      case that:TreePositionDir=>that.upEdge==upEdge && that.get==get && that.children==children
+      case that:TreePositionDir=>that.upEdge==upEdge && that.get==get && (that.tree eq tree)
       case _ => false
     }
   }
+  val tree:Tree
 }
 
 class Tree(edges:IndexedSeq[Edge],
@@ -136,21 +139,23 @@ class Tree(edges:IndexedSeq[Edge],
   }
 
   def traverseDown(n:Node,dir:Edge):TreePositionDir={
-    val tree =this
+    val parent =this
     new TreePositionDir{
       val get = n
       lazy val children = edgeMap(n).filter{e=> ! (e same dir)}.map{e=>traverseDown(e from n right,e)}
       val upEdge = dir
-      val leaves = tree.leaves(n,dir)
+      val leaves = parent.leaves(n,dir)
+      val tree = parent
     }
   }
 
   def traverseDown(n:Node):RootedTreePosition={
-    val tree =this
+    val parent =this
     new RootedTreePosition{
       val get = n
       lazy val children = edgeMap(n).map{e=>traverseDown(e from n right,e)}
-      val leaves = tree.leaves(n)
+      val leaves = parent.leaves(n)
+      val tree = parent
     }
   }
 

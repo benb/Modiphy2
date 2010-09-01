@@ -61,6 +61,17 @@ class EnhancedListVector(seq:LinearSeq[Double]){
     }
     ans
   }
+  def prod(vect:LinearSeq[Double])={
+    var ans = vect.head * seq.head :: Nil
+    var l1 = vect.tail
+    var l2 = seq.tail
+    while (!(l1.isEmpty)){
+      ans = l1.head * l2.head :: ans
+      l1 = l1.tail
+      l2 = l2.tail
+    }
+    ans.reverse
+  }
 }
 
 object EnhancedMatrix{

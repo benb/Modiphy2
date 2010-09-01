@@ -258,6 +258,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 }
 
 
+/*
 class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
   import scala.actors.Futures.future
   val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_)}}
@@ -275,9 +276,11 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:
      }.map{f=>math.log(f)}.foldLeft(0.0D){_+_}
    }
   }
-}
+}*/
 class SimpleLikelihoodCalc(tree:Tree,m:SingleModel, var cache:Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]] = Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]](),val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply){
   import SimpleLikelihoodCalc._
+  
+  val cheat = new ColtLikelihoodCalc
 
 import engine.combinePartialLikelihoods
 import engine.partialLikelihoodCalc
@@ -301,11 +304,8 @@ import engine.finalLikelihood
    }
 
    
-    def partialLikelihoods(treePos:RootedTreePosition,p:Pattern):PartialLikelihoods={
-      import scala.actors.Futures.future
-      val myPatterns = treePos.leaves.map{leaf=>p(leaf.id.get)}
-      cacheLookup(treePos,myPatterns).getOrElse{
-        val ans = treePos.get match {
+    def partialLikelihoods(treePos:RootedTreePosition,p:LinearSeq[Pattern]):LinearSeq[PartialLikelihoods]={
+       treePos.get match {
           case n:INode=>
             combinePartialLikelihoods(
               treePos.children.toList.map{tp=>
@@ -313,27 +313,15 @@ import engine.finalLikelihood
               partialLikelihoodCalc(plStart,m(tp.upEdge)) 
             }
           )
-          case l:Leaf=>leafPartialLikelihoods(p(l.id.get))
+          case l:Leaf=>p.map{p2=>leafPartialLikelihoods(p2(l.id.get))}
         }
-
-        cache = cacheAdd(treePos,myPatterns,ans)
-        ans
-      }
     }
 
-  def likelihood(p:Pattern,root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Likelihood={
-    finalLikelihood(partialLikelihoods(root,p),m.pi(root.get))
-  }
-  def likelihoods(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
-    import scala.actors.Futures._
-    if (Parallel.on){ 
-      p.grouped(30).toList.map{subList=>future{subList.map{pat=>likelihood(pat,root)}}}.map{_()}.flatten
-     // p.map{pat=>future{likelihood(pat,root)}}.map{_()}
-    }
-    else {p.map{pat=>likelihood(pat,root)}}
+  def likelihoods(p:LinearSeq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
+      finalLikelihood(partialLikelihoods(root,p),m.pi(root.get))
   }
 
-  def logLikelihood(p:Seq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
+  def logLikelihood(p:LinearSeq[Pattern],root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
    likelihoods(p,root).foldLeft(0.0D){_+math.log(_)}
   }
   def logLikelihoodAln(alignment:Aligmment,root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
@@ -366,9 +354,9 @@ import engine.finalLikelihood
 }
 
 trait LikelihoodEngine{
-  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods
-  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods    
-  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood
+  def combinePartialLikelihoods(intermediates:LinearSeq[LinearSeq[PartialLikelihoods]]):LinearSeq[PartialLikelihoods]
+  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix):LinearSeq[PartialLikelihoods]    
+  def finalLikelihood(partial:LinearSeq[PartialLikelihoods],pi:IndexedSeq[Double]):LinearSeq[Likelihood]
 }
 class ColtLikelihoodCalc extends LikelihoodEngine{
   import SimpleLikelihoodCalc.Cache
@@ -377,19 +365,23 @@ class ColtLikelihoodCalc extends LikelihoodEngine{
 
   import modiphy.math.EnhancedMatrix._
 
-  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods = {
-    val myInter = intermediates.map{p:PartialLikelihoods=>List(Seq2Vec(p))}
-    coltCombinePartialLikelihoods(myInter).head
+  def combinePartialLikelihoods(intermediates:LinearSeq[LinearSeq[PartialLikelihoods]]):LinearSeq[PartialLikelihoods] = {
+    val myInter:LinearSeq[LinearSeq[DoubleMatrix1D]] = intermediates.map{list => 
+      list.map{p:PartialLikelihoods=>
+        Seq2Vec(p)
+      }
+    }
+    coltCombinePartialLikelihoods(myInter).map{Vec2Seq}
   }
-  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods={
-    coltPartialLikelihoodCalc(List(Seq2Vec(end)),matrix).head
+  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix)={
+    coltPartialLikelihoodCalc(end.map(Seq2Vec),matrix).map{Vec2Seq}
   }
-  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood={
-    coltLikelihoods(List(Seq2Vec(partial)),pi).head
+  def finalLikelihood(partial:LinearSeq[PartialLikelihoods],pi:IndexedSeq[Double])={
+    coltLikelihoods(partial.map(Seq2Vec),pi)
   }
 
 
-  def coltPartialLikelihoodCalc(end:List[DoubleMatrix1D],matrix:DoubleMatrix2D)={
+  def coltPartialLikelihoodCalc(end:LinearSeq[DoubleMatrix1D],matrix:DoubleMatrix2D)={
     val width = matrix.rows
     val rows = new Array[DoubleMatrix1D](width)
     (0 until width).foreach{i=> rows(i)=matrix viewRow i}
@@ -402,7 +394,7 @@ class ColtLikelihoodCalc extends LikelihoodEngine{
         ret
       }
   }
-  def coltCombinePartialLikelihoods(intermediates:List[List[DoubleMatrix1D]])={
+  def coltCombinePartialLikelihoods(intermediates:LinearSeq[LinearSeq[DoubleMatrix1D]])={
     val ans = intermediates.head
     intermediates.tail.foreach{list2=>
       ans.zip(list2).map{t=> // not really a map but used for parallel reasons
@@ -411,10 +403,9 @@ class ColtLikelihoodCalc extends LikelihoodEngine{
       }
     }
     ans
-
   }
 
-  def coltLikelihoods(partial:List[DoubleMatrix1D],pi:Seq[Double])={
+  def coltLikelihoods(partial:LinearSeq[DoubleMatrix1D],pi:Seq[Double])={
     partial.map{vec=>
       val ans = pi.iterator.zipWithIndex.map{t=>
         val(p,i)=t
@@ -431,26 +422,29 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
 
   import modiphy.math.EnhancedMatrix._
 
-  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods]):PartialLikelihoods = {
-    combinePartialLikelihoods(intermediates,List[Double]())
+  def combinePartialLikelihoods(intermediates:LinearSeq[LinearSeq[PartialLikelihoods]]):LinearSeq[PartialLikelihoods] = {
+    //TODO opt
+    var ans = intermediates.head
+    intermediates.tail.foreach{list2=>
+      ans = ans.zip(list2).map{t=>
+        t._1 prod t._2
+      }
+    }
+    ans
   }
-  def combinePartialLikelihoods(intermediates:List[PartialLikelihoods],ans:List[Double]):PartialLikelihoods={
-    if (intermediates.head.isEmpty){
-      ans.reverse.toList
-    }else {
-      combinePartialLikelihoods(intermediates.map{_.tail},intermediates.map{_.head}.product::ans)
+  
+  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix)={
+    //TODO opt
+    end.map{e=>
+      matrix.map{e.dotProduct}
     }
   }
-  def partialLikelihoodCalc(end:PartialLikelihoods,matrix:Matrix):PartialLikelihoods={
-    matrix.map{end.dotProduct}
-  }
-  def finalLikelihood(partial:PartialLikelihoods,pi:IndexedSeq[Double]):Likelihood={
-    coltLikelihoods(List(Seq2Vec(partial)),pi).head
+
+  def finalLikelihood(partial:LinearSeq[PartialLikelihoods],pi:IndexedSeq[Double])={
+    coltLikelihoods(partial.map{Seq2Vec},pi)
   }
 
-  
-
-  def coltLikelihoods(partial:List[DoubleMatrix1D],pi:Seq[Double])={
+  def coltLikelihoods(partial:LinearSeq[DoubleMatrix1D],pi:Seq[Double])={
     partial.map{vec=>
       val ans = pi.iterator.zipWithIndex.map{t=>
         val(p,i)=t
@@ -459,4 +453,5 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
       ans
     }
   }
+  
 }

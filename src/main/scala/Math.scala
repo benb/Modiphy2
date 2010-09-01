@@ -51,9 +51,9 @@ class EnhancedListVector(seq:LinearSeq[Double]){
   }
   def sum = seq.reduceLeft{_+_}
   def dotProduct(vect:LinearSeq[Double])={
-    var ans = 0.0
-    var l1 = vect
-    var l2 = seq
+    var ans = vect.head * seq.head
+    var l1 = vect.tail
+    var l2 = seq.tail
     while (!(l1.isEmpty)){
       ans = ans + l1.head * l2.head
       l1 = l1.tail

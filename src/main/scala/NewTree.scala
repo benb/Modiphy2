@@ -421,6 +421,7 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
   import cern.colt.matrix._
 
   import modiphy.math.EnhancedMatrix._
+  import modiphy.math.EnhancedMatrix
 
   def combinePartialLikelihoods(intermediates:LinearSeq[LinearSeq[PartialLikelihoods]]):LinearSeq[PartialLikelihoods] = {
     //TODO opt
@@ -435,9 +436,7 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
   
   def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix)={
     //TODO opt
-    end.map{e=>
-      matrix.map{e.dotProduct}
-    }
+    new EnhancedMatrix(end) multipleDotProduct matrix
   }
 
   def finalLikelihood(partial:LinearSeq[PartialLikelihoods],pi:IndexedSeq[Double])={

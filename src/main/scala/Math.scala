@@ -2,6 +2,7 @@ package modiphy.math
 import scala.collection.LinearSeq
 class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
   implicit def MakeEnhancedMatrix(mat:LinearSeq[LinearSeq[Double]])=new EnhancedMatrix(mat)
+  implicit def MakeEnhancedListVector(vec:LinearSeq[Double])=new EnhancedListVector(vec)
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
     //fixme
     List.tabulate(mat.length,mat.head.length){(i,j)=>
@@ -29,6 +30,13 @@ class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
       row.map{_ / -zSum * rate}
     }
   }
+  def multipleDotProduct(mat2:LinearSeq[LinearSeq[Double]]):LinearSeq[LinearSeq[Double]] = {
+
+    mat.map{e=>
+      mat2.map{e.dotProduct}
+    }
+  }
+
 }
 class EnhancedVector(seq:IndexedSeq[Double]){
   def normalize = normalise

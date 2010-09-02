@@ -3,7 +3,30 @@ package modiphy.util
 trait Memo[A,B] extends Function[A,B]{
   def apply(a:A):B
 }
+
+
+class ArrayMemo[A,B <: AnyRef](g:A=>Int,size:Int)(f:A=>B)(implicit m:Manifest[B]) extends Memo[A,B]{
+  val memo= new Array[B](size)
+  var junk = List[B]()
+  def apply(a:A)={
+    val num = g(a)
+    memo(num) match {
+      case null => val ans = f(a); memo(num)=ans; ans
+      case ans => ans
+    }
+  }
+}
 class PermMemo[A, B](f:A=>B) extends Memo[A,B]{
+  var map=Map[A,B]()
+  def apply(a:A)={
+    if (map contains a){map(a)}
+    else {val ans = f(a);
+    map=map updated (a,ans)
+    ans}
+  }
+}
+
+class ConcurrentPermMemo[A, B](f:A=>B) extends Memo[A,B]{
   var map=Map[A,B]()
   def apply(a:A)=Symbol(a.hashCode.toString).synchronized{
     if (map contains a){map(a)}

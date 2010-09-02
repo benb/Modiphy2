@@ -44,7 +44,7 @@ object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K
 }
 
 
-class Aligmment(gen:Map[String,Iterable[Letter]]){
+class Alignment(gen:Map[String,Iterable[Letter]]){
   val names = gen.keys.toList
   type Pattern=Map[String,Letter]
   val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Map[String,Letter]]()){(ml,col)=>
@@ -84,7 +84,7 @@ class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{
     val map = this.foldLeft(Map[String,Seq[Letter]]()){(m,t)=>
       m updated (t._1,alphabet.parseString(t._2)) 
     }
-    new Aligmment(map)
+    new Alignment(map)
   }
 }
 object Fasta{

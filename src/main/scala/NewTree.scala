@@ -273,7 +273,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 }
 
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Aligmment,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
+class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
   import scala.actors.Futures.future
   val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
@@ -299,7 +299,7 @@ trait CachingLikelihoodCalc extends LikelihoodCalc{
 trait LikelihoodCalc{
    def partialLikelihoods(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Aligmment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
+class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
@@ -342,7 +342,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Aligmment,val eng
   }}
 
 
-  def factory(t:modiphy.tree.Tree,m:SingleModel,aln:Aligmment) = new SimpleLikelihoodCalc(t,m,aln)
+  def factory(t:modiphy.tree.Tree,m:SingleModel,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
 
   def update(t:modiphy.tree.Tree)={
     /*

@@ -273,25 +273,23 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 }
 
 
-/*
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
+class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Aligmment,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
   import scala.actors.Futures.future
-  val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_)}}
+  val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
-  def logLikelihood(patterns:Seq[Pattern])={
-    if (Parallel.on){
-      patterns.map{pattern=>
-          future{
-           lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
-          }
-        }.map{f=>math.log(f())}.foldLeft(0.0D){_+_}
-     } else {
-      patterns.map{pattern=>
-         lklCalc.zip(priors).map{t=> t._1.likelihood(pattern) * t._2}.reduceLeft{_+_}
-     }.map{f=>math.log(f)}.foldLeft(0.0D){_+_}
-   }
+  def logLikelihood()={
+    val likelihoods = lklCalc.zip(priors).map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+    var ans =  0.0
+    val patternCount = aln.countList.iterator
+    while (likelihoods.head.hasNext){
+      val row = likelihoods.map{_.next}
+      ans = ans + math.log(row.reduceLeft{_+_}) * patternCount.next
+    }
+    ans
   }
-}*/
+      
+}
+
 trait CachingLikelihoodCalc extends LikelihoodCalc{
    val partialLikelihoodCache:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=new modiphy.util.ArrayMemo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({treePos=>treePos.id},tree.maxID)({ treePos => realPartialLikelihoodCalc(treePos)})
    override def partialLikelihoods(treePos:RootedTreePosition)=partialLikelihoodCache(treePos)  

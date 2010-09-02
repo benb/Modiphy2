@@ -8,7 +8,8 @@ class TreeSuite extends FunSuite {
   test("parse"){
     val tree = Tree(newick)
     println(tree)
-    println(tree reRoot tree.traverseFrom("Euglena").get.neighbours.head.get)
+    val otherNode = tree.traverseFrom("Euglena").get.neighbours.map{_.get}.collect{case i:INode=>i}.head
+    println(tree reRoot otherNode)
     val bl1 = tree branchLength 3
     val t2 = tree setBranchLength(3,bl1+1.3)
     t2.treeLength should equal (tree.treeLength+1.3)

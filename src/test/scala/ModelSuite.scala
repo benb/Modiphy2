@@ -25,15 +25,15 @@ class ModelSuite extends FunSuite {
       val tree = Tree(treeStr)
       val lkl = new SimpleLikelihoodCalc(tree,model) 
     
-      lkl.logLikelihood(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
+      lkl.logLikelihood()(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
     }*/
     for (factory <- ColtLikelihoodFactory::IndexedSeqLikelihoodFactory::Nil){
-      val lkl = new SimpleLikelihoodCalc(tree,model,engine=factory.apply) 
-      lkl.logLikelihood(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
+      val lkl = new SimpleLikelihoodCalc(tree,model,aln,engine=factory.apply) 
+      lkl.logLikelihood() should be (-6057.892394 plusOrMinus 0.001)//from PAML
       val tree2 = tree setBranchLength (2,2.0)
-      lkl update tree2 logLikelihood aln.columns should be < (-6057.892394)
+      lkl update tree2 logLikelihood() should be < (-6057.892394)
       val tree3 = tree setBranchLength (2, tree.getBranchLength(2))
-      lkl update tree2 update tree3 logLikelihood aln.columns should be (-6057.892394 plusOrMinus 0.001) 
+      lkl update tree2 update tree3 logLikelihood() should be (-6057.892394 plusOrMinus 0.001) 
     }
     
    
@@ -47,10 +47,10 @@ class ModelSuite extends FunSuite {
     val plusF=Vector(0.038195,0.070238,0.054858,0.072802,0.037939,0.046398,0.080749,0.048962,0.017175,0.043066,0.085106,0.069726,0.015124,0.046142,0.028198,0.073571,0.044604,0.024096,0.049474,0.053576)
     val modelF = new GammaModel(plusF,WAG.S,0.5,numCat=4)
 
-    val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,model.models)
-    lkl.logLikelihood(aln.columns) should be (-5808.929978 plusOrMinus 0.001)
-    val lkl2 = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,modelF.models)
-    lkl2.logLikelihood(aln.columns) should be (-5810.399586 plusOrMinus 0.001)
+    val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model.models)
+    lkl.logLikelihood() should be (-5808.929978 plusOrMinus 0.001)
+    val lkl2 = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,modelF.models)
+    lkl2.logLikelihood() should be (-5810.399586 plusOrMinus 0.001)
   }
 
 

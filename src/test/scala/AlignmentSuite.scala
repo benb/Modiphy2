@@ -50,5 +50,6 @@ class AlignmentSuite extends FunSuite {
     val aln = new Fasta(alnStr.lines).parseWith(AminoAcid)
     aln("Synechocysti").head should be (AminoAcid.G)
     aln.columns.drop(3).head.apply("Gloeobacter") should be (AminoAcid.T)
+    aln.frequencies.reduceLeft(_+_) should be (1.0 plusOrMinus 1E-7)
   }
 }

@@ -58,6 +58,17 @@ class Aligmment(gen:Map[String,Iterable[Letter]]){
   lazy val patternList=patterns.toList.map{_._1}
   lazy val countList=patterns.toList.map{_._2}
   def apply(s:String)=gen(s)
+  lazy val frequencies={
+    val alphabet = columns.head.values.head.alphabet
+    var countMap=Map[Letter,Int]()
+    columns.map{p:Pattern=>
+      countMap = p.values.foldLeft(countMap){(m,letter)=>
+        m updated (letter,m.getOrElse(letter,0)+1) 
+      }
+    }
+    val total = countMap.filter{_._1.isReal}.values.reduceLeft(_+_)
+    alphabet.matElements.map{countMap.getOrElse(_,0)}.map{_.toDouble/total}
+  }.toIndexedSeq
 }
 
 class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{

@@ -163,7 +163,9 @@ class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],al
     val mI = paramIndex.getOrElse(myParamIndex)
     (p,mI) match {
       case (Gamma,`myParamIndex`)=>GammaModel(piValues,s,vec(0),numCat,myParamIndex,models.head)
-      case (Pi,`myParamIndex`)=>GammaModel(vec,s,alpha,numCat,myParamIndex)
+      case (Pi,`myParamIndex`)=>{
+        GammaModel(vec,s,alpha,numCat,myParamIndex)
+      }
       case _ => this
     }
   }

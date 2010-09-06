@@ -5,6 +5,7 @@ import modiphy.model._
 import modiphy.alignment.GlobalAlphabet._
 import scala.collection.LinearSeq
 
+import modiphy.opt._
 
 object Parallel{
   val on = false
@@ -286,11 +287,12 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 }
 
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Seq[StdModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
+class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixtureModel,lkl:Option[Seq[SimpleLikelihoodCalc]]=None) extends LikelihoodCalc[StdMixtureModel]{
   import scala.actors.Futures.future
-  val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_,aln)}}
+  val models = m.models
+  val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
-  def logLikelihood()={
+  lazy val logLikelihood={
     val likelihoods = lklCalc.zip(priors).map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
     var ans =  0.0
     val patternCount = aln.countList.iterator
@@ -300,28 +302,37 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Seq[Std
     }
     ans
   }
-      
+  def updated(t:Tree)=new MixtureLikelihoodCalc(priors,t,aln,m,lkl)
+  def updated(m:StdMixtureModel)=new MixtureLikelihoodCalc(priors,tree,aln,m,lkl)
+
+   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
+   def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
 }
 
-trait CachingLikelihoodCalc extends LikelihoodCalc{
+/*
+trait CachingLikelihoodCalc[A <: Model] extends LikelihoodCalc[A]{
    val partialLikelihoodCache:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=new modiphy.util.ArrayMemo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({treePos=>treePos.id},tree.maxID)({ treePos => realPartialLikelihoodCalc(treePos)})
    override def partialLikelihoods(treePos:RootedTreePosition)=partialLikelihoodCache(treePos)  
    def tree:Tree
    def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
-}
-trait LikelihoodCalc{
-   def partialLikelihoods(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
-   def updated(t:Tree):LikelihoodCalc
-   def updated(m:StdModel):LikelihoodCalc
+}*/
+trait LikelihoodCalc[A <: Model]{
+//   def partialLikelihoods(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
+   def updated(t:Tree):LikelihoodCalc[A]
+   def updated(m:A):LikelihoodCalc[A]
    def logLikelihood:Double
+   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
+   def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
+class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[StdModel]{
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
   import engine.partialLikelihoodCalc
   import engine.finalLikelihood
 
+   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
+   def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
   def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]={
     val p = aln.patternList
        treePos.get match {

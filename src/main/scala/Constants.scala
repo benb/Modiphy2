@@ -2,7 +2,7 @@ package modiphy.math.constants
 import modiphy.math.EnhancedMatrix._
 
 object WAG{
-  lazy val pi = Vector(0.0866279,0.043972,0.0390894,0.0570451,0.0193078,0.0367281,0.0580589,0.0832518,0.0244313,0.048466,0.086209,0.0620286,0.0195027,0.0384319,0.0457631,0.0695179,0.0610127,0.0143859,0.0352742,0.0708956).normalize
+  lazy val pi =Vector(0.0866279,0.043972,0.0390894,0.0570451,0.0193078,0.0367281,0.0580589,0.0832518,0.0244313,0.048466,0.086209,0.0620286,0.0195027,0.0384319,0.0457631,0.0695179,0.0610127,0.0143859,0.0352742,0.0708956).normalize
   lazy val S = {TriangularMatrix.fromLower( List(
   0.551571,
   0.509848,0.635346,
@@ -34,7 +34,7 @@ object TriangularMatrix{
     (1 to size).reverse.map{i=>
       val start = (0 until size-i).map{i=> vals.next} 
       val ans = start ++ ((size-i until size).map{i=>0.0D})//.toIndexedSeq
-      ans.toList
-  }.toList
+      ans.toIndexedSeq
+  }.toIndexedSeq
 }
 }

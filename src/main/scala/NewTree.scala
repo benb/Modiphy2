@@ -49,7 +49,7 @@ object TreeTest{
 
     (0 until args(0).toInt).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model,aln) 
-      println(lkl.logLikelihood())
+      println(lkl.logLikelihood)
     }
   }
 }
@@ -188,6 +188,19 @@ class Tree(edges:IndexedSeq[Edge],
     val myNewEdgeMap = edgeMap.updated(e.left,newEdge::edgeMap(e.left).filter{_!=oldEdge}).updated(e.right,newEdge::edgeMap(e.right).filter{_!=oldEdge})
       copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
   }
+  def setBranchLengths(vec:Seq[Double])={
+    var myNewEdgeMap = edgeMap
+    val edges2 = edges.zip(vec).map{ t=>val (e,d)=t
+      if (e.dist!=d){
+        val ans = e.copy(dist=d)
+        myNewEdgeMap = myNewEdgeMap.updated(e.left,ans::myNewEdgeMap(e.left).filter{_!=e}).updated(e.right,ans::edgeMap(e.right).filter{_!=e})
+        ans
+      }else {
+        e
+      }
+    }
+    copy(newEdges=edges2,newEdgeMap = myNewEdgeMap)
+  }
   lazy val getBranchLength = edges.map{_.dist}
 
   def treeLength = edges.map{_.dist}.foldLeft(0.0D){_+_}
@@ -273,7 +286,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 }
 
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Seq[SingleModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
+class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Seq[StdModel],lkl:Option[Seq[SimpleLikelihoodCalc]]=None){
   import scala.actors.Futures.future
   val lklCalc = lkl.getOrElse{m.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
@@ -298,8 +311,11 @@ trait CachingLikelihoodCalc extends LikelihoodCalc{
 }
 trait LikelihoodCalc{
    def partialLikelihoods(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
+   def updated(t:Tree):LikelihoodCalc
+   def updated(m:StdModel):LikelihoodCalc
+   def logLikelihood:Double
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
+class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
@@ -332,9 +348,10 @@ class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Alignment,val eng
     finalLikelihood(partialLikelihoods(root),m.pi(root.get))
   }
 
-  def logLikelihood(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
+  def logLikelihoodRoot(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
     likelihoods(root).zip(aln.countList).map{t=>math.log(t._1)*t._2}.reduceLeft{_+_}
   }
+  lazy val logLikelihood:Double=logLikelihoodRoot()
 
   val leafPartialLikelihoods=immutableHashMapMemo{l:Letter=>l match {
     case a if (a.isReal) => List.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
@@ -342,9 +359,9 @@ class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Alignment,val eng
   }}
 
 
-  def factory(t:modiphy.tree.Tree,m:SingleModel,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
+  def factory(t:modiphy.tree.Tree,m:StdModel,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
 
-  def update(t:modiphy.tree.Tree)={
+  def updated(t:modiphy.tree.Tree)={
     /*
     val updatedCache = tree.differences(t).foldLeft(cache){(c2,e)=>
         c2.keys.foldLeft(c2){(map,tp)=> 
@@ -358,7 +375,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:SingleModel,val aln:Alignment,val eng
     factory(t,m,aln)
   }
 
-  def update(m:SingleModel)={
+  def updated(m:StdModel)={
     factory(tree,m,aln)//,Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]())
   }
 }

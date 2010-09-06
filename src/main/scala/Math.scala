@@ -1,8 +1,37 @@
 package modiphy.math
 import scala.collection.LinearSeq
+import EnhancedMatrix._
+class EnhancedIndexedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
+  def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
+    //fixme
+   List.tabulate(mat.length,mat.head.length){(i,j)=>
+      if (j>i){
+        mat(j)(i)*pi(j)
+      }else{
+        mat(i)(j)*pi(j)
+      }
+    }.fixDiag.normalise(pi,rate)
+  }
+  def fixDiag={
+    mat.zipWithIndex.map{t=> val (row,i)=t
+      val sum= row.updated(i,0.0).reduceLeft{_+_}
+      row.updated(i,-sum)
+    }
+  }
+  def normalise(pi:IndexedSeq[Double],rate:Double=1.0)={
+    val zSum = mat.diag.zip(pi).map{t=>t._1*t._2}.sum
+    mat.map{row=>
+      row.map{_ / -zSum * rate}
+    }
+  }
+  def diag={
+    mat.zipWithIndex.map{t=> val (row,i)=t
+      row(i)
+    }
+  }
+}
 class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
-  implicit def MakeEnhancedMatrix(mat:LinearSeq[LinearSeq[Double]])=new EnhancedMatrix(mat)
-  implicit def MakeEnhancedListVector(vec:LinearSeq[Double])=new EnhancedListVector(vec)
+  import EnhancedMatrix._
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
     //fixme
     List.tabulate(mat.length,mat.head.length){(i,j)=>
@@ -31,15 +60,21 @@ class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
     }
   }
   def multipleDotProduct(mat2:LinearSeq[LinearSeq[Double]]):LinearSeq[LinearSeq[Double]] = {
-
     mat.map{e=>
       mat2.map{e.dotProduct}
     }
   }
 
 }
-class EnhancedVector(seq:IndexedSeq[Double]){
-  def normalize = normalise
+trait EnhancedVector[A <: Seq[Double]]{
+  def normalise:A
+  def normalize:A = normalise
+  def sum:Double
+  def dotProduct(other:Seq[Double]):Double
+  def prod(other:Seq[Double]):A
+  
+}
+class EnhancedIndexedVector(seq:IndexedSeq[Double]) extends EnhancedVector[IndexedSeq[Double]]{
   def normalise = {
     val mySum = sum
     seq.map{i=> i/sum}
@@ -50,15 +85,17 @@ class EnhancedVector(seq:IndexedSeq[Double]){
     seq.zip(vect).foreach{t=>ans = ans + t._1*t._2}
     ans
   }
+  def prod(vect:Seq[Double])={
+    seq.zip(vect).map{t=>t._1*t._2}
+  }
 }
-class EnhancedListVector(seq:LinearSeq[Double]){
-  def normalize = normalise
+class EnhancedListVector(seq:LinearSeq[Double]) extends EnhancedVector[LinearSeq[Double]]{
   def normalise = {
     val mySum = sum
     seq.map{i=> i/sum}
   }
   def sum = seq.reduceLeft{_+_}
-  def dotProduct(vect:LinearSeq[Double])={
+  def dotProduct(vect:Seq[Double])={
     var ans = vect.head * seq.head
     var l1 = vect.tail
     var l2 = seq.tail
@@ -69,7 +106,7 @@ class EnhancedListVector(seq:LinearSeq[Double]){
     }
     ans
   }
-  def prod(vect:LinearSeq[Double])={
+  def prod(vect:Seq[Double])={
     var ans = vect.head * seq.head :: Nil
     var l1 = vect.tail
     var l2 = seq.tail
@@ -85,8 +122,10 @@ class EnhancedListVector(seq:LinearSeq[Double]){
 object EnhancedMatrix{
   import cern.colt.matrix._
   implicit def MakeEnhancedMatrix(mat:LinearSeq[LinearSeq[Double]])=new EnhancedMatrix(mat)
-  implicit def MakeEnhancedVector(vec:IndexedSeq[Double])=new EnhancedVector(vec)
-  implicit def MakeEnhancedListVector(vec:LinearSeq[Double])=new EnhancedListVector(vec)
+  implicit def MakeEnhancedIndexedMatrix(mat:IndexedSeq[IndexedSeq[Double]])=new EnhancedIndexedMatrix(mat)
+  implicit def MakeEnhancedListVector(vec:LinearSeq[Double]) = new EnhancedListVector(vec)
+  implicit def MakeEnhancedIndexedVector(vec:IndexedSeq[Double]) = new EnhancedIndexedVector(vec)
+
   lazy val fact1D = cern.colt.matrix.DoubleFactory1D.dense
   lazy val fact2D = cern.colt.matrix.DoubleFactory2D.dense
   lazy val sparse = cern.colt.matrix.DoubleFactory2D.sparse

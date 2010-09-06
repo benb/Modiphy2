@@ -14,6 +14,10 @@ import Types._
 trait Model{
   def paramMap:Map[(ParamName,Int),Any]
   lazy val params=paramMap.keys.toList
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):Model
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):Model
+  def getOptParam(p:ParamName,index:Option[Int]=None):IndexedSeq[Double]
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):Model
 }
 trait SingleModel extends Model{
   val subModelIndex=0
@@ -26,6 +30,10 @@ trait StdModel extends SingleModel{
   val exp:Exp
   def apply(e:Edge)=exp(e.dist)
   lazy val paramMap=Map[(ParamName,Int),Any]((Pi,subModelIndex)->pi,(S,subModelIndex)->mat)
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdModel
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdModel
+  def getOptParam(p:ParamName,index:Option[Int]):IndexedSeq[Double]
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdModel
   /*
   def u:Matrix
   def d:Vector
@@ -33,10 +41,14 @@ trait StdModel extends SingleModel{
   */
 }
 trait StdMixtureModel extends Model{
-  def models:Seq[SingleModel]
+  def models:Seq[StdModel]
   def apply(e:Edge)=models.map{m=>m(e)}
   def priors:IndexedSeq[Double]
   lazy val paramMap = models.map{_.paramMap}.foldLeft(Map[(ParamName,Int),Any]()){_++_}
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdMixtureModel
+  def getOptParam(p:ParamName,index:Option[Int]):IndexedSeq[Double]
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
 }
 trait Exp{
   def apply(bl:Double,rate:Double=1.0)=expInt(bl*rate)
@@ -79,18 +91,49 @@ object DefaultExpFactory extends ExpFactory{
   def setDefault(fact:ExpFactory){default=fact}
 }
 
-class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:LinearSeq[LinearSeq[Double]],rate:Double=1.0,fact:ExpFactory=DefaultExpFactory,override val subModelIndex:Int=0) extends StdModel{
+class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],rate:Double=1.0,fact:ExpFactory=DefaultExpFactory,override val subModelIndex:Int=0) extends StdModel{
   val mat = s.sToQ(piValues,rate)
   def pi(n:Node) = piValues
   val pi = piValues
-  val exp=DefaultExpFactory.apply(mat)
-  
+  val exp=DefaultExpFactory.apply(mat) 
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    val mI = paramIndex getOrElse subModelIndex
+    (p,mI) match {
+      case (Pi,`subModelIndex`) => new BasicLikelihoodModel(vec,s,rate,fact,subModelIndex) 
+    }
+  }
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
+    val mI = paramIndex getOrElse subModelIndex
+    (p,mI) match {
+      case (S,`subModelIndex`) => new BasicLikelihoodModel(piValues,vec,rate,fact,subModelIndex)
+    }
+  }
+  def getOptParam(p:ParamName,modelIndex:Option[Int]):IndexedSeq[Double]={
+    val mI = modelIndex.getOrElse(subModelIndex)
+    (p,mI) match {
+      case (Pi,`subModelIndex`)=> Pi.getOpt(piValues)
+      case (S,`subModelIndex`) => S.getOpt(s)
+    }
+  }
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],modelIndex:Option[Int])={
+    val mI = modelIndex.getOrElse(subModelIndex)
+    (p,mI) match {
+      case (Pi,`subModelIndex`)=> new BasicLikelihoodModel(Pi.getReal(vec),s,rate,fact,subModelIndex)
+      case (S,`subModelIndex`)=> new BasicLikelihoodModel(piValues,S.getReal(vec),rate,fact,subModelIndex)
+    }
+  }
 }
 
-class GammaModel(piValues:IndexedSeq[Double],s:LinearSeq[LinearSeq[Double]],alpha:Double,numCat:Int) extends StdMixtureModel{
+class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int) extends StdMixtureModel{
   lazy val gamma = new Gamma(numCat).apply(alpha)
   val models:Seq[StdModel] = gamma.zipWithIndex.map{t=>new BasicLikelihoodModel(piValues,s,t._1,subModelIndex=t._2)}
   val priors = Vector.fill(numCat)(1.0/numCat)
+  //stub methods FIXME
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]) = this
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]) = this
+  def getOptParam(p:ParamName,modelIndex:Option[Int]):IndexedSeq[Double]=piValues
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],modelIndex:Option[Int])=this
+
 }
 
 class Gamma(numCat:Int){

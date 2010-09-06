@@ -25,15 +25,15 @@ class ModelSuite extends FunSuite {
       val tree = Tree(treeStr)
       val lkl = new SimpleLikelihoodCalc(tree,model) 
     
-      lkl.logLikelihood()(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
+      lkl.logLikelihood(aln.columns) should be (-6057.892394 plusOrMinus 0.001)//from PAML
     }*/
     for (factory <- ColtLikelihoodFactory::IndexedSeqLikelihoodFactory::Nil){
       val lkl = new SimpleLikelihoodCalc(tree,model,aln,engine=factory.apply) 
-      lkl.logLikelihood() should be (-6057.892394 plusOrMinus 0.001)//from PAML
+      lkl.logLikelihood should be (-6057.892394 plusOrMinus 0.001)//from PAML
       val tree2 = tree setBranchLength (2,2.0)
-      lkl update tree2 logLikelihood() should be < (-6057.892394)
+      lkl.updated(tree2).logLikelihood should be < (-6057.892394)
       val tree3 = tree setBranchLength (2, tree.getBranchLength(2))
-      lkl update tree2 update tree3 logLikelihood() should be (-6057.892394 plusOrMinus 0.001) 
+      lkl.updated(tree2).updated(tree3).logLikelihood should be (-6057.892394 plusOrMinus 0.001) 
     }
     
    
@@ -50,9 +50,9 @@ class ModelSuite extends FunSuite {
     val modelF = new GammaModel(plusF,WAG.S,0.5,numCat=4)
 
     val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model.models)
-    lkl.logLikelihood() should be (-5808.929978 plusOrMinus 0.001)
+    lkl.logLikelihood should be (-5808.929978 plusOrMinus 0.001)
     val lkl2 = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,modelF.models)
-    lkl2.logLikelihood() should be (-5810.399586 plusOrMinus 0.001)
+    lkl2.logLikelihood should be (-5810.399586 plusOrMinus 0.001)
   }
 
 

@@ -59,10 +59,26 @@ class ModelSuite extends FunSuite {
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
     val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
-    val optModel = new OptModel(model,lkl,tree,aln)
+    val optModel = new OptModel(lkl,tree,aln)
     optModel.logLikelihood should be (-5808.929978 plusOrMinus 0.001)
     optModel(Pi)=aln.frequencies
     optModel.logLikelihood should be (-5810.399586 plusOrMinus 0.001)
+  }
+
+  test("Opt Gamma Model should match PAML"){
+    val tree = Tree(treeStr)
+    val aln = Fasta(alnStr).parseWith(AminoAcid)
+    val model = GammaModel(aln.frequencies,WAG.S,0.5,4)
+    val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
+    val optModel = new OptModel(lkl,tree,aln)
+    val t1 = System.currentTimeMillis
+    optModel optimiseAll Gamma
+    val t2 = System.currentTimeMillis
+    println(t2-t1)
+    optModel.logLikelihood should be > ( -5809.180030)
+    println(optModel.logLikelihood)
+    println(optModel(Gamma))
+    optModel(Gamma).head should be (0.57932 plusOrMinus 0.01)
   }
 }
 

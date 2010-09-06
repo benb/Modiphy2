@@ -27,7 +27,7 @@ case object Pi extends ParamName{
 }
 case object S extends ParamName{
   def lower(i:Int)=0.0
-  def upper(i:Int)=1000.0
+  def upper(i:Int)=50.0
   def getOpt(d:Seq[Seq[Double]]):IndexedSeq[Double]={
     var initial = d(1)(0) match {
       case 1.0=>d
@@ -51,19 +51,20 @@ case object S extends ParamName{
 
 case object BranchLengths extends ParamName{
   def lower(i:Int)=0.0
-  def upper(i:Int)=50.0
+  def upper(i:Int)=100.0
 }
 
 case object Gamma extends ParamName{
   lazy val gamma = new GammaDist
-  def lower(i:Int)=0.001
+  def lower(i:Int)=0.01
   def upper(i:Int)=1000.0
   def getDist(d:Double,nC:Int)={
     gamma(d,nC)
   }
 }
 
-class OptModel[A <: Model](var m:A,var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
+class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
+  def m = calc.model
   val myParams:List[(ParamName,Int)] = m.params 
   def update(p:ParamName,value:Any,paramIndex:Option[Int]=None){
     p match {
@@ -108,8 +109,11 @@ class OptModel[A <: Model](var m:A,var calc:LikelihoodCalc[A],var tree:Tree,aln:
   def apply(t:(ParamName,Int)):IndexedSeq[Double] = m.getOptParam(t._1,Some(t._2))
   def apply(p:ParamName):IndexedSeq[Double]=m.getOptParam(p,None)
 
-  def optimise(list:(ParamName,Option[Int])*)={
+  def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,None)})}
+  def optimise(list:(ParamName,Option[Int])*){optimiseSeq(list)}
+  def optimiseSeq(list:Seq[(ParamName,Option[Int])]){
     val optParams = myParams.filter{t=>
+      println(t)
       list.filter{t2=> t2._2.isEmpty || Some(t._2)==t2._2}.map{_._1}.contains(t._1) 
     }
     val start = optParams.map{t=>getOptParam(t._1,Some(t._2))}.flatten.toArray
@@ -130,7 +134,7 @@ class OptModel[A <: Model](var m:A,var calc:LikelihoodCalc[A],var tree:Tree,aln:
           optParams.zip(splitP).foreach{ t=> val ((pName,pIndex),values)=t
             update(pName,values,Some(pIndex))
           }
-          logLikelihood
+          -logLikelihood
         }
       }
       val search = new ConjugateDirectionSearch
@@ -140,13 +144,17 @@ class OptModel[A <: Model](var m:A,var calc:LikelihoodCalc[A],var tree:Tree,aln:
         val param = optParams.head
         val getLowerBound = param._1.lower(0)
         val getUpperBound = param._1.upper(0)
+        println("Upper " + getUpperBound)
         def evaluate(p:Double)={
           update(param._1,p,Some(param._2))
-          logLikelihood
+          val ans = logLikelihood
+          println(p + " " + ans)
+          -ans
         }
       }
       val search = new UnivariateMinimum
-      search.optimize(start(0),func,1E-3)
+      val finalP = search.optimize(start(0),func,1E-4)
+      func evaluate finalP
     }
   }
 }

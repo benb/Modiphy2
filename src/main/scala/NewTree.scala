@@ -293,7 +293,7 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
   lazy val logLikelihood={
-    val likelihoods = lklCalc.zip(priors).map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+    val likelihoods = lklCalc.zip(priors).map{t=> future{t._1.likelihoods().map{_ * t._2}}}.map{_().iterator}
     var ans =  0.0
     val patternCount = aln.countList.iterator
     while (likelihoods.head.hasNext){
@@ -307,6 +307,7 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
 
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
+   def model =m
 }
 
 /*
@@ -323,6 +324,7 @@ trait LikelihoodCalc[A <: Model]{
    def logLikelihood:Double
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
+   def model:A
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[StdModel]{
   import SimpleLikelihoodCalc._
@@ -330,6 +332,8 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
   import engine.combinePartialLikelihoods
   import engine.partialLikelihoodCalc
   import engine.finalLikelihood
+  
+  def model=m
 
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }

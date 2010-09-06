@@ -47,7 +47,8 @@ trait StdMixtureModel extends Model{
   def models:Seq[StdModel]
   def apply(e:Edge)=models.map{m=>m(e)}
   def priors:IndexedSeq[Double]
-  lazy val paramMap = models.map{_.paramMap}.foldLeft(Map[(ParamName,Int),Any]()){_++_}
+  lazy val paramMap = models.map{_.paramMap}.foldLeft(mixtureParams){_++_}
+  def mixtureParams=Map[(ParamName,Int),Any]()
   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
   def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdMixtureModel
   def getOptParam(p:ParamName,index:Option[Int]):IndexedSeq[Double]
@@ -62,6 +63,7 @@ trait Exp{
 }
 
 class ColtExp(mat:Matrix) extends Exp{
+  println("NEW EXP")
   import cern.colt.matrix.linalg._
   import cern.colt.matrix._
   import cern.colt.function._
@@ -158,6 +160,7 @@ object GammaModel{
 }
 class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,myParamIndex:Int,val models:Seq[StdModel]) extends StdMixtureModel{
   val priors = Vector.fill(numCat)(1.0/numCat)
+  override def mixtureParams=Map((Gamma,myParamIndex)->alpha)
   //stub methods FIXME
   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]) = {
     val mI = paramIndex.getOrElse(myParamIndex)
@@ -179,6 +182,7 @@ class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],al
 
   def getOptParam(p:ParamName,paramIndex:Option[Int]):IndexedSeq[Double]={
     val mI = paramIndex.getOrElse(myParamIndex)
+    println("Getting " + p + " " + alpha)
     (p,mI) match {
       case (Pi,`myParamIndex`)=> Pi.getOpt(piValues)
       case (S,`myParamIndex`)=> S.getOpt(s)

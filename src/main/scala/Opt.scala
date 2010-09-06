@@ -48,10 +48,21 @@ case object S extends ParamName{
     }
   }
 }
+
 case object BranchLengths extends ParamName{
   def lower(i:Int)=0.0
   def upper(i:Int)=50.0
 }
+
+case object Gamma extends ParamName{
+  lazy val gamma = new GammaDist
+  def lower(i:Int)=0.001
+  def upper(i:Int)=1000.0
+  def getDist(d:Double,nC:Int)={
+    gamma(d,nC)
+  }
+}
+
 abstract class OptModel(var m:StdModel,var calc:LikelihoodCalc,var tree:Tree,aln:Alignment){
   val myParams:List[(ParamName,Int)] = m.params 
   def update(p:ParamName,value:Any,paramIndex:Option[Int]=None){

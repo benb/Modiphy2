@@ -45,7 +45,7 @@ object TreeTest{
 
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
-    val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
+    val model = BasicLikelihoodModel(WAG.pi,WAG.S)
 
     (0 until args(0).toInt).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model,aln) 

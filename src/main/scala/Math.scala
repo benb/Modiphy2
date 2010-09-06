@@ -4,7 +4,7 @@ import EnhancedMatrix._
 class EnhancedIndexedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
     //fixme
-   List.tabulate(mat.length,mat.head.length){(i,j)=>
+   Vector.tabulate(mat.length,mat.head.length){(i,j)=>
       if (j>i){
         mat(j)(i)*pi(j)
       }else{
@@ -134,6 +134,6 @@ object EnhancedMatrix{
   implicit def Seq2Vec(s:Seq[Double])=fact1D.make(s.toArray)
   implicit def Vec2Seq(v:DoubleMatrix1D)=v.toArray.toList
  // implicit def Vec2LinearSeq(v:DoubleMatrix1D)=v.toArray.toList
-  implicit def Seq2Mat(s:LinearSeq[LinearSeq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
+  implicit def Seq2Mat(s:Seq[Seq[Double]])=fact2D.make(s.map{_.toArray}.toArray)
   implicit def Mat2Seq(m:DoubleMatrix2D)=m.toArray.map{_.toList}.toList
 }

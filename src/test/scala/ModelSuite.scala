@@ -4,6 +4,7 @@ import modiphy.alignment._
 import modiphy.model._
 import modiphy.tree._
 import modiphy.math.constants._
+import modiphy.opt._
 import ModelData._
 
 class ModelSuite extends FunSuite {
@@ -17,7 +18,7 @@ class ModelSuite extends FunSuite {
   }
 
   test("log likelihood of basic model should match PAML") {
-    val model = new BasicLikelihoodModel(WAG.pi,WAG.S)
+    val model = BasicLikelihoodModel(WAG.pi,WAG.S)
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
     /*
@@ -39,15 +40,13 @@ class ModelSuite extends FunSuite {
    
       }
   test("Gamma mixture model should match PAML"){
-    val model = new GammaModel(WAG.pi,WAG.S,0.5,numCat=4)
+    val model = GammaModel(WAG.pi,WAG.S,0.5,4)
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
 
 
-    println(aln.frequencies)
-    println(Vector(0.038195,0.070238,0.054858,0.072802,0.037939,0.046398,0.080749,0.048962,0.017175,0.043066,0.085106,0.069726,0.015124,0.046142,0.028198,0.073571,0.044604,0.024096,0.049474,0.053576))
     val plusF=aln.frequencies // Vector(0.038195,0.070238,0.054858,0.072802,0.037939,0.046398,0.080749,0.048962,0.017175,0.043066,0.085106,0.069726,0.015124,0.046142,0.028198,0.073571,0.044604,0.024096,0.049474,0.053576)
-    val modelF = new GammaModel(plusF,WAG.S,0.5,numCat=4)
+    val modelF = model updatedVec (Pi,plusF,None)//GammaModel(plusF,WAG.S,0.5,4)
 
     val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model.models)
     lkl.logLikelihood should be (-5808.929978 plusOrMinus 0.001)

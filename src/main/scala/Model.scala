@@ -7,7 +7,8 @@ import modiphy.opt._
 
 
 object Types{
-  type Matrix=LinearSeq[LinearSeq[Double]]
+  type Matrix=IndexedSeq[IndexedSeq[Double]]
+  type LinearMatrix = LinearSeq[LinearSeq[Double]]
 }
 import Types._
 
@@ -22,16 +23,18 @@ trait Model{
 trait SingleModel extends Model{
   val subModelIndex=0
   def pi(n:Node):IndexedSeq[Double]
-  def apply(e:Edge):Matrix
+  def apply(e:Edge):LinearMatrix
 }
 trait StdModel extends SingleModel{
   def pi:IndexedSeq[Double]
   def mat:Matrix
   val exp:Exp
-  def apply(e:Edge)=exp(e.dist)
+  val rate=1.0
+  def apply(e:Edge)=exp(e.dist * rate)
   lazy val paramMap=Map[(ParamName,Int),Any]((Pi,subModelIndex)->pi,(S,subModelIndex)->mat)
   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdModel
   def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdModel
+  def updatedRate(d:Double):StdModel
   def getOptParam(p:ParamName,index:Option[Int]):IndexedSeq[Double]
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdModel
   /*
@@ -52,10 +55,10 @@ trait StdMixtureModel extends Model{
 }
 trait Exp{
   def apply(bl:Double,rate:Double=1.0)=expInt(bl*rate)
-  lazy val expInt:Memo[Double,Matrix]=Memo[Double,Matrix]({bl=>
+  lazy val expInt:Memo[Double,LinearMatrix]=Memo[Double,LinearSeq[LinearSeq[Double]]]({bl=>
     exp(bl)
   })
-  def exp(bl:Double):Matrix
+  def exp(bl:Double):LinearSeq[LinearSeq[Double]]
 }
 
 class ColtExp(mat:Matrix) extends Exp{
@@ -70,10 +73,11 @@ class ColtExp(mat:Matrix) extends Exp{
   val v = algebra.inverse(u)
   val d = eigen.getD
 
-  def exp(bl:Double):Matrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
+  def exp(bl:Double):LinearMatrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
 }
 abstract class ExpFactory{
-  def apply(mat:Matrix)=make(mat)
+  def apply(mat:Matrix):Exp=make(mat)
+  def apply(mat:Matrix,pi:IndexedSeq[Double]):Exp=apply(mat.sToQ(pi))
   def make(mat:Matrix):Exp
 }
 abstract class CachingExpFactory extends ExpFactory{
@@ -91,21 +95,35 @@ object DefaultExpFactory extends ExpFactory{
   def setDefault(fact:ExpFactory){default=fact}
 }
 
-class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],rate:Double=1.0,fact:ExpFactory=DefaultExpFactory,override val subModelIndex:Int=0) extends StdModel{
+object BasicLikelihoodModel{
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]]):BasicLikelihoodModel={
+    apply(piValues,s,0)
+  }
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],subModelIndex:Int):BasicLikelihoodModel={
+    apply(piValues,s,1.0,subModelIndex)
+  }
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],rate:Double,subModelIndex:Int):BasicLikelihoodModel={
+    new BasicLikelihoodModel(piValues,s,rate,DefaultExpFactory(s,piValues),subModelIndex)
+  }
+}
+
+class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]], override val rate:Double, val exp:Exp,override val subModelIndex:Int=0) extends StdModel{
   val mat = s.sToQ(piValues,rate)
   def pi(n:Node) = piValues
   val pi = piValues
-  val exp=DefaultExpFactory.apply(mat) 
+  def updatedRate(r:Double)={
+     new BasicLikelihoodModel(piValues,s,r,exp,subModelIndex)
+  }
   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
     val mI = paramIndex getOrElse subModelIndex
     (p,mI) match {
-      case (Pi,`subModelIndex`) => new BasicLikelihoodModel(vec,s,rate,fact,subModelIndex) 
+      case (Pi,`subModelIndex`) => BasicLikelihoodModel(vec,s,rate,subModelIndex) 
     }
   }
   def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
     val mI = paramIndex getOrElse subModelIndex
     (p,mI) match {
-      case (S,`subModelIndex`) => new BasicLikelihoodModel(piValues,vec,rate,fact,subModelIndex)
+      case (S,`subModelIndex`) => BasicLikelihoodModel(piValues,vec,rate,subModelIndex)
     }
   }
   def getOptParam(p:ParamName,modelIndex:Option[Int]):IndexedSeq[Double]={
@@ -118,25 +136,67 @@ class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[D
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],modelIndex:Option[Int])={
     val mI = modelIndex.getOrElse(subModelIndex)
     (p,mI) match {
-      case (Pi,`subModelIndex`)=> new BasicLikelihoodModel(Pi.getReal(vec),s,rate,fact,subModelIndex)
-      case (S,`subModelIndex`)=> new BasicLikelihoodModel(piValues,S.getReal(vec),rate,fact,subModelIndex)
+      case (Pi,`subModelIndex`)=> BasicLikelihoodModel(Pi.getReal(vec),s,rate,subModelIndex)
+      case (S,`subModelIndex`)=> BasicLikelihoodModel(piValues,S.getReal(vec),rate,subModelIndex)
     }
   }
 }
 
-class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int) extends StdMixtureModel{
-  lazy val gamma = new Gamma(numCat).apply(alpha)
-  val models:Seq[StdModel] = gamma.zipWithIndex.map{t=>new BasicLikelihoodModel(piValues,s,t._1,subModelIndex=t._2)}
+object GammaModel{
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int):GammaModel={
+    apply(piValues,s,alpha,numCat,0)
+  }
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,myParamIndex:Int):GammaModel={
+    apply(piValues,s,alpha,numCat,myParamIndex,BasicLikelihoodModel(piValues,s))
+  }
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,myParamIndex:Int,basicModels1:StdModel):GammaModel={
+    apply(piValues,s,alpha,numCat,myParamIndex,Gamma.getDist(alpha,numCat).map{t=>basicModels1.updatedRate(t)})  
+  }
+  def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,myParamIndex:Int,models:Seq[StdModel]):GammaModel={
+    new GammaModel(piValues,s,alpha,numCat,myParamIndex,models)
+  }
+}
+class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,myParamIndex:Int,val models:Seq[StdModel]) extends StdMixtureModel{
   val priors = Vector.fill(numCat)(1.0/numCat)
   //stub methods FIXME
-  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]) = this
-  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]) = this
-  def getOptParam(p:ParamName,modelIndex:Option[Int]):IndexedSeq[Double]=piValues
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],modelIndex:Option[Int])=this
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]) = {
+    val mI = paramIndex.getOrElse(myParamIndex)
+    (p,mI) match {
+      case (Gamma,`myParamIndex`)=>GammaModel(piValues,s,vec(0),numCat,myParamIndex,models.head)
+      case (Pi,`myParamIndex`)=>GammaModel(vec,s,alpha,numCat,myParamIndex)
+      case _ => this
+    }
+  }
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]) = {
+    val mI = paramIndex.getOrElse(myParamIndex)
+    (p,mI) match {
+      case (S,`myParamIndex`)=>GammaModel(piValues,vec,alpha,numCat,myParamIndex)
+      case _ => this
+    }
+  }
+
+  def getOptParam(p:ParamName,paramIndex:Option[Int]):IndexedSeq[Double]={
+    val mI = paramIndex.getOrElse(myParamIndex)
+    (p,mI) match {
+      case (Pi,`myParamIndex`)=> Pi.getOpt(piValues)
+      case (S,`myParamIndex`)=> S.getOpt(s)
+      case (Gamma,`myParamIndex`) => Vector(alpha)
+    }
+  }
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    val mI = paramIndex.getOrElse(myParamIndex)
+    (p,mI) match {
+      case (Pi,`myParamIndex`)=> updatedVec(Pi,Pi.getReal(vec),paramIndex)
+      case (S,`myParamIndex`)=> updatedMat(S,S.getReal(vec),paramIndex)
+      case (Gamma,`myParamIndex`) => updatedVec(Gamma,vec,paramIndex)
+      case _ => this
+    }
+ 
+  }
 
 }
 
-class Gamma(numCat:Int){
+class GammaDist{
   import org.apache.commons.math.distribution.ChiSquaredDistributionImpl
   import cern.jet.stat.Gamma.incompleteGamma
   val chi2=new ChiSquaredDistributionImpl(1.0D)
@@ -148,10 +208,10 @@ class Gamma(numCat:Int){
   def gammaInverseCDF(prob:Double,alpha:Double,beta:Double)=chiSquareInverseCDF(prob,2.0*(alpha))/(2.0*(beta))
 
 
-  def apply(shape:Double):IndexedSeq[Double]={
-    gamma(shape)
+  def apply(shape:Double,numCat:Int):IndexedSeq[Double]={
+    gamma(shape,numCat)
   }
-  def gamma(shape:Double):IndexedSeq[Double]={
+  def gamma(shape:Double,numCat:Int):IndexedSeq[Double]={
     if (shape==Double.PositiveInfinity){
       (0 until numCat).map{a=>1.0}
     }else {

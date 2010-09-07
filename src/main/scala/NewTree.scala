@@ -8,7 +8,9 @@ import scala.collection.LinearSeq
 import modiphy.opt._
 
 object Parallel{
-  val on = false
+  var on = true
+  import jsr166y._
+  lazy val forkJoinPool = new ForkJoinPool
 }
 abstract class Node{
  def id:Option[String]=None
@@ -44,14 +46,25 @@ object TreeTest{
     import modiphy.test.ModelData._
     import modiphy.math.constants._
 
+    if(args.length >1 && (args(1) startsWith "par")){Parallel.on=true}
+    if(args.length >1 && (args(1) startsWith "nopar")){Parallel.on=false}
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
+/*
     val model = BasicLikelihoodModel(WAG.pi,WAG.S)
+
 
     (0 until args(0).toInt).foreach{i=>
       val lkl = new SimpleLikelihoodCalc(tree,model,aln) 
       println(lkl.logLikelihood)
     }
+    */
+    val model = GammaModel(aln.frequencies,WAG.S,0.5,4)
+    val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
+    val optModel = new OptModel(lkl,tree,aln)
+    optModel optimiseAll Gamma
+    optModel optimiseAll Pi
+    println(optModel)
   }
 }
 
@@ -288,12 +301,26 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 
 
 class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixtureModel,lkl:Option[Seq[SimpleLikelihoodCalc]]=None) extends LikelihoodCalc[StdMixtureModel]{
-  import scala.actors.Futures.future
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
   lazy val logLikelihood={
-    val likelihoods = lklCalc.zip(priors).map{t=> future{t._1.likelihoods().map{_ * t._2}}}.map{_().iterator}
+    val likelihoods = if (Parallel.on){
+      import jsr166y._
+      class Calc(subModels:List[(SimpleLikelihoodCalc,Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
+        def compute = {
+          subModels match {
+            case model::Nil => subModels.map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+            case model::tail => subModels.map{model => new Calc(List(model))}.map{_.fork}.map{_.join}.map{_.head}
+          }
+        }
+      }
+      val calc = new Calc(lklCalc.zip(priors).toList)
+      Parallel.forkJoinPool submit calc
+      calc.join
+    }else {
+      lklCalc.zip(priors).map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+    }
     var ans =  0.0
     val patternCount = aln.countList.iterator
     while (likelihoods.head.hasNext){
@@ -332,6 +359,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
   import engine.combinePartialLikelihoods
   import engine.partialLikelihoodCalc
   import engine.finalLikelihood
+
   
   def model=m
 
@@ -350,13 +378,43 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
           case l:Leaf=>p.map{p2=>leafPartialLikelihoods(p2(l.id.get))}
         }
     }
+
+
+
     import scalaz._
     import Scalaz._
 
 //   val partialLikelihoods = mutableHashMapMemo(realPartialLikelihoodCalc)
 //   val partialLikelihoods:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({ treePos => realPartialLikelihoodCalc(treePos)})
 //   val partialLikelihoods:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=new modiphy.util.ArrayMemo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({treePos=>treePos.id},tree.maxID)({ treePos => realPartialLikelihoodCalc(treePos)})
-    def partialLikelihoods(treePos:RootedTreePosition)=realPartialLikelihoodCalc(treePos)  
+    
+    def partialLikelihoods(treePos:RootedTreePosition)={
+      Parallel.on match {
+        case true => parallelPartialLikelihoods(treePos)
+        case false => realPartialLikelihoodCalc(treePos)
+      }
+    }
+    def parallelPartialLikelihoods(treePos:RootedTreePosition)={
+      import jsr166y._
+      val forkJoinPool = Parallel.forkJoinPool
+      val p = aln.patternList
+      class Calc(treePos:RootedTreePosition) extends RecursiveTask[LinearSeq[PartialLikelihoods]]{
+        def compute():LinearSeq[PartialLikelihoods]={
+          (treePos,treePos.get) match {
+            case (tp:TreePositionDir,n:INode)=>
+              val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
+              partialLikelihoodCalc( combinePartialLikelihoods(childCalc.map{_.join}) , m(tp.upEdge) )
+            case (tp:RootedTreePosition,n:INode)=>
+              val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
+              combinePartialLikelihoods( childCalc.map{_.join})
+            case (tp:TreePositionDir,l:Leaf)=> partialLikelihoodCalc(p.map{p2=>leafPartialLikelihoods(p2(l.id.get))},m(tp.upEdge))
+          }
+        }
+      }
+      val calc = new Calc(treePos)
+      forkJoinPool submit calc
+      calc.join
+    }
 
 
   def likelihoods(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={

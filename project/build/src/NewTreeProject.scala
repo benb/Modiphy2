@@ -20,6 +20,7 @@ class NewTreeProject(info: ProjectInfo) extends DefaultProject(info) {
   val scalaz = "com.googlecode.scalaz" %% "scalaz-core" % "5.0"
 
   val concurrent = "concurrent" % "concurrent" % "1.3.4" // needed for proguard
+  val jsr166y = "jsr166y" % "jsr166y" % "0" from "http://gee.cs.oswego.edu/dl/jsr166/dist/jsr166y.jar"
  // val sbt = "sbt" % "sbt_2.7.7" % "0.5.7" from "http://simple-build-tool.googlecode.com/svn-history/r1125/artifacts/0.5.7-p1/jars/sbt_2.7.7.jar"
   
 }

@@ -64,7 +64,7 @@ object TreeTest{
     val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
     val optModel = new OptModel(lkl,tree,aln)
     optModel optimiseAll Gamma
-    optModel optimiseAll Pi
+    optModel optimiseAll (Pi,Gamma)
     println(optModel)
   }
 }

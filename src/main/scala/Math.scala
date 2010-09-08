@@ -60,8 +60,26 @@ class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
     }
   }
   def multipleDotProduct(mat2:LinearSeq[LinearSeq[Double]]):LinearSeq[LinearSeq[Double]] = {
+    def dotAll(vec:LinearSeq[Double],mat:LinearSeq[LinearSeq[Double]])={
+      mat.map{vec.dotProduct}
+      /*
+      //alternative attempted optimisation that is actually slower:
+      var p1 = vec
+      val p2 = mat.toArray
+      val ans = new Array[Double](p2.length)
+      while (!(p1.isEmpty)){
+        val p1Head = p1.head
+        for (c<- 0 until p2.length){
+          ans(c) = ans(c) + p2(c).head * p1Head
+          p2(c)=p2(c).tail
+        }
+        p1 = p1.tail
+      }
+      ans.toList
+      */
+    }
     mat.map{e=>
-      mat2.map{e.dotProduct}
+      dotAll(e,mat2)
     }
   }
 

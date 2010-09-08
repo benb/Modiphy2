@@ -11,6 +11,7 @@ object Parallel{
   var on = true
   import jsr166y._
   lazy val forkJoinPool = new ForkJoinPool
+  lazy val threshold = -1
 }
 abstract class Node{
  def id:Option[String]=None
@@ -305,7 +306,7 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
   lazy val logLikelihood={
-    val likelihoods = if (Parallel.on){
+    val likelihoods = if (Parallel.on && false){
       import jsr166y._
       class Calc(subModels:List[(SimpleLikelihoodCalc,Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
         def compute = {
@@ -335,6 +336,7 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
    def model =m
+   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
 }
 
 /*
@@ -351,6 +353,7 @@ trait LikelihoodCalc[A <: Model]{
    def logLikelihood:Double
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
+   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def model:A
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[StdModel]{
@@ -362,20 +365,25 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
 
   
   def model=m
+   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
 
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
   def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]={
     val p = aln.patternList
-       treePos.get match {
-          case n:INode=>
-            combinePartialLikelihoods(
-              treePos.children.toList.map{tp=>
-              val plStart:LinearSeq[PartialLikelihoods] = partialLikelihoods(tp)
-              partialLikelihoodCalc(plStart,m(tp.upEdge)) 
-            }
-          )
-          case l:Leaf=>p.map{p2=>leafPartialLikelihoods(p2(l.id.get))}
+       (treePos,treePos.get) match {
+          case (myTP:TreePositionDir,n:INode)=>
+           partialLikelihoodCalc(
+            combinePartialLikelihoods(treePos.children.toList.map{realPartialLikelihoodCalc}
+           ),m(myTP.upEdge))
+          case (myTP:RootedTreePosition,n:INode)=>
+            combinePartialLikelihoods(treePos.children.toList.map{realPartialLikelihoodCalc})
+          case (myTP:TreePositionDir,l:Leaf)=>   
+          partialLikelihoodCalc(
+            p.map{p2=>
+              leafPartialLikelihoods(p2(l.id.get))},
+              m(myTP.upEdge)
+            )
         }
     }
 
@@ -396,14 +404,14 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
     }
     def parallelPartialLikelihoods(treePos:RootedTreePosition)={
       import jsr166y._
-      val forkJoinPool = Parallel.forkJoinPool
+      import Parallel._
       val p = aln.patternList
       class Calc(treePos:RootedTreePosition) extends RecursiveTask[LinearSeq[PartialLikelihoods]]{
         def compute():LinearSeq[PartialLikelihoods]={
           (treePos,treePos.get) match {
             case (tp:TreePositionDir,n:INode)=>
-              val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
-              partialLikelihoodCalc( combinePartialLikelihoods(childCalc.map{_.join}) , m(tp.upEdge) )
+                val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
+                partialLikelihoodCalc( combinePartialLikelihoods(childCalc.map{_.join}) , m(tp.upEdge) )
             case (tp:RootedTreePosition,n:INode)=>
               val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
               combinePartialLikelihoods( childCalc.map{_.join})

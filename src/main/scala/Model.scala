@@ -63,7 +63,6 @@ trait Exp{
 }
 
 class ColtExp(mat:Matrix) extends Exp{
-  println("NEW EXP")
   import cern.colt.matrix.linalg._
   import cern.colt.matrix._
   import cern.colt.function._
@@ -182,7 +181,6 @@ class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],al
 
   def getOptParam(p:ParamName,paramIndex:Option[Int]):IndexedSeq[Double]={
     val mI = paramIndex.getOrElse(myParamIndex)
-    println("Getting " + p + " " + alpha)
     (p,mI) match {
       case (Pi,`myParamIndex`)=> Pi.getOpt(piValues)
       case (S,`myParamIndex`)=> S.getOpt(s)

@@ -313,6 +313,7 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
           subModels match {
             case model::Nil => subModels.map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
             case model::tail => subModels.map{model => new Calc(List(model))}.map{_.fork}.map{_.join}.map{_.head}
+            case Nil => Nil
           }
         }
       }

@@ -68,7 +68,7 @@ class ParallelMemo[A,B](f:A=>B) extends Memo[A,B]{
 }
 
 class CacheMap[A,B](defaultSize:Int) extends scala.collection.mutable.Map[A,B]{
-  val map = new org.apache.commons.collections.LRUMap(defaultSize)
+  val map = new org.apache.commons.collections.map.LRUMap(defaultSize)
     def get(a:A)={   
     val b = map.get(a)
       if (b==null){  
@@ -85,7 +85,7 @@ class CacheMap[A,B](defaultSize:Int) extends scala.collection.mutable.Map[A,B]{
     map put (kv._1,kv._2)
     this
   }
-  def iterator={new JclIterator(map.iterator).map{_.asInstanceOf[A]}.map{a=>(a,get(a).get)}}
+  def iterator={new JclIterator(map.mapIterator).map{_.asInstanceOf[A]}.map{a=>(a,get(a).get)}}
 }
 class JclIterator[A](i:java.util.Iterator[A]) extends Iterator[A]{
   def next=i.next

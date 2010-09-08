@@ -66,28 +66,39 @@ case object Gamma extends ParamName{
 class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
   def m = calc.model
   val myParams:List[(ParamName,Int)] = m.params 
-  def update(p:ParamName,value:Any,paramIndex:Option[Int]=None){
+
+  def update(p:ParamName,d:Double){update(p,d,None)}
+  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,None)}
+  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,None)}
+  def update(p:ParamName,d:Double,paramIndex:Option[Int]){
     p match {
       case BranchLengths => 
         paramIndex match {
-          case None => value match {
-            case v:IndexedSeq[Double] => tree = tree.setBranchLengths(v);updatedTree()
-            case a => cantHandle(p,a,paramIndex)
-          }
-          case Some(i) => value match {
-            case d:Double => tree = tree.setBranchLength(i,d);updatedTree()
-            case a => cantHandle(p,a,paramIndex)
-          }
+          case None => cantHandle(p,d,paramIndex)
+          case Some(i) => tree = tree.setBranchLength(i,d);updatedTree()
         }
-      case any => value match {
-        case d:Double => calc= calc.updatedVec(p,Vector(d),paramIndex)
-        case vec:IndexedSeq[Double] => calc = calc.updatedVec(p,vec,paramIndex)
-        case mat:IndexedSeq[IndexedSeq[Double]] => calc = calc.updatedMat(p,mat,paramIndex)
-        case vec:Seq[Double] => update(p,vec.toIndexedSeq,paramIndex)
-        case any => cantHandle(p,value,paramIndex)
-      }
+      case any => calc=calc.updatedVec(any,Vector(d),paramIndex)
     }
   }
+
+  def update(p:ParamName,value:IndexedSeq[Double],paramIndex:Option[Int]){
+    p match {
+      case BranchLengths => 
+        paramIndex match {
+          case None => tree = tree.setBranchLengths(value)
+          case Some(i) => cantHandle(p,value,paramIndex)
+        }
+      case any => calc = calc.updatedVec(p,value,paramIndex)
+    }
+  }
+
+  def update(p:ParamName,value:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]=None)(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){
+    p match {
+      case BranchLengths=> cantHandle(p,value,paramIndex)
+      case any => calc = calc.updatedMat(p,value,paramIndex)
+    }
+  }
+
   def setOptParam(p:ParamName,value:IndexedSeq[Double],paramIndex:Option[Int]){
     calc = calc.setOptParam(p,value,paramIndex)
   }
@@ -105,9 +116,9 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
     println("Can't handle combination " + p + " " + paramIndex + " " + a)
   }
 
-  def update(t:(ParamName,Int), value:Any){
-    update(t._1,value,Some(t._2))
-  }
+  def update(t:(ParamName,Int), value:Double){ update(t._1,value,Some(t._2))}
+  def update(t:(ParamName,Int), value:IndexedSeq[Double]){ update(t._1,value,Some(t._2))}
+  def update(t:(ParamName,Int), value:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){ update(t._1,value,Some(t._2))}
 
   def apply(t:(ParamName,Int)):IndexedSeq[Double] = m.getOptParam(t._1,Some(t._2))
   def apply(p:ParamName):IndexedSeq[Double]=m.getOptParam(p,None)

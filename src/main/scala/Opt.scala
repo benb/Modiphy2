@@ -11,10 +11,10 @@ trait ParamName{
 
 case object Pi extends ParamName{
   def getReal(d:IndexedSeq[Double])={
-    val exponentiated =  d.map{i=>Math.exp(i)}
-    val total = exponentiated.reduceLeft{_+_} + Math.exp(0.0D)
+    val exponentiated =  d.map{i=>math.exp(i)}
+    val total = exponentiated.reduceLeft{_+_} + math.exp(0.0D)
     val ans = new scala.collection.immutable.VectorBuilder[Double]
-    ans += Math.exp(0.0D)/total 
+    ans += math.exp(0.0D)/total 
     ans ++= (0 until d.length).map{i=> exponentiated(i)/total}
     ans.result
   }

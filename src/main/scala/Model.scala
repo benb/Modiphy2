@@ -67,31 +67,52 @@ class ColtExp(mat:Matrix) extends Exp{
   import cern.colt.matrix.linalg._
   import cern.colt.matrix._
   import cern.colt.function._
+  import Timing.time
   lazy val algebra = new Algebra
   def expVals(d:DoubleMatrix2D,t:Double)=sparse.diagonal(fact2D.diagonal(d).assign( new DoubleFunction(){def apply(arg:Double)={math.exp(t * arg)}}))
 
-  lazy val eigen = try {new EigenvalueDecomposition(mat)}catch{ case e=> println("Can't find Eigensystem for Matrix " + mat + "\n because : " + e); throw e}
+  lazy val eigen = {
+    val ans = time{
+      try {new EigenvalueDecomposition(mat)}catch{ case e=> println("Can't find Eigensystem for Matrix " + mat + "\n because : " + e); throw e}
+    }
+    ans._1
+  }
   lazy val u = eigen.getV
   lazy val v = algebra.inverse(u)
   lazy val d = eigen.getD
 
   def exp(bl:Double):LinearMatrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
 }
+object Timing{
+  def time[A](f: =>A):(A,Double)={
+    val start = System.nanoTime : Double
+    val ans = f
+    val end = System.nanoTime : Double
+    (ans,(end-start)/1000000.0)
+  }
+}
 class JBlasExp(m:Matrix) extends Exp{
   import org.jblas.{DoubleMatrix,Solve,MatrixFunctions}
   import org.jblas.Eigen._
+  import Timing.time
 
   lazy val mat = new DoubleMatrix(m.length,m.length,m.flatten:_*)
-  lazy val eigen = symmetricEigenvectors(mat)
-  lazy val u = eigen(0)
-  lazy val d = eigen(1)
-  lazy val v = Solve.solveSymmetric(u,DoubleMatrix.eye(u.getRows))
+  lazy val eigen = {
+    val ans = time{
+      eigenvectors(mat)
+    }
+    ans._1
+  }
+  lazy val u = eigen(0).getReal
+  lazy val d = eigen(1).getReal
+  lazy val v = Solve.solve(u.dup,DoubleMatrix.eye(u.getRows))
+  lazy val size = mat.getRows
 
   def exp(bl:Double):LinearMatrix = {
-    val ans = u.dup
-    val myD = MatrixFunctions.expi(d.dup.mmul(bl))
-    u.mmul(myD).mmul(v)
-    ans.toArray2.toList.map{_.toList}
+    val myD = DoubleMatrix.diag(MatrixFunctions.expi(d.mmul(bl)).diag)
+    val ans = u.mmul(myD).mmul(v).transpose
+    val out = ans.toArray2.map{_.toList}.toList
+    out
   }
 
 }
@@ -107,13 +128,13 @@ abstract class CachingExpFactory extends ExpFactory{
   override def apply(mat:Matrix)=cache(mat)
 }
 object ColtExpFactory extends CachingExpFactory{
-  def make(mat:Matrix)=new ColtExp(mat)
+  def make(mat:Matrix):ColtExp=new ColtExp(mat)
 }
 object JBlasExpFactory extends CachingExpFactory{
   def make(mat:Matrix)=new JBlasExp(mat)
 }
 object DefaultExpFactory extends ExpFactory{
-  var default:ExpFactory=JBlasExpFactory
+  var default:ExpFactory=ColtExpFactory
   def make(mat:Matrix)=default.apply(mat)
   def setDefault(fact:ExpFactory){default=fact}
 }

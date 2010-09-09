@@ -8,6 +8,7 @@ abstract class Alphabet(names:String*) extends Enumeration(names :_*) {
   def unknown:Letter
   def isReal(v:Letter):Boolean
   def matElements:Seq[Letter]
+  lazy val matLength = matElements.length
   val length = matElements.length
   def gap:Letter
   def parseString(s:String):IndexedSeq[Letter]

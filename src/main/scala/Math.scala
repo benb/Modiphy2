@@ -29,6 +29,12 @@ class EnhancedIndexedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
       row(i)
     }
   }
+  def addClass(mat2:IndexedSeq[IndexedSeq[Double]])= {
+    val end = Vector.fill(mat2.size)(0.0)
+    val start = Vector.fill(mat.size)(0.0)
+    val ans = mat.map{_ ++ end} ++ mat2.map{ start ++ _}
+    ans
+  }
 }
 class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
   import EnhancedMatrix._

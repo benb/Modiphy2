@@ -9,7 +9,9 @@ trait ParamName{
   def upper(i:Int):Double 
 }
 
-case object Pi extends ParamName{
+case object Pi extends PiParamName
+case object MixturePrior extends PiParamName 
+trait PiParamName extends ParamName{
   def getReal(d:IndexedSeq[Double])={
     val exponentiated =  d.map{i=>math.exp(i)}
     val total = exponentiated.reduceLeft{_+_} + math.exp(0.0D)
@@ -62,6 +64,7 @@ case object Gamma extends ParamName{
     gamma(d,nC)
   }
 }
+
 
 class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
   def m = calc.model
@@ -120,8 +123,8 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
   def update(t:(ParamName,Int), value:IndexedSeq[Double]){ update(t._1,value,Some(t._2))}
   def update(t:(ParamName,Int), value:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){ update(t._1,value,Some(t._2))}
 
-  def apply(t:(ParamName,Int)):IndexedSeq[Double] = m.getOptParam(t._1,Some(t._2))
-  def apply(p:ParamName):IndexedSeq[Double]=m.getOptParam(p,None)
+  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,Some(t._2))
+  def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,None)
 
   def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,None)})}
   def optimise(list:(ParamName,Option[Int])*){optimiseSeq(list)}
@@ -129,8 +132,10 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
     val optParams = myParams.filter{t=>
       list.filter{t2=> t2._2.isEmpty || Some(t._2)==t2._2}.map{_._1}.contains(t._1) 
     }
-    val start = optParams.map{t=>getOptParam(t._1,Some(t._2))}.flatten.toArray
-    val lengths = optParams.map{t=>getOptParam(t._1,Some(t._2)).length}
+    val s1 = optParams.map{t=>getOptParam(t._1,Some(t._2))}
+    if (s1 contains None){error("Not all specified params exist!")}
+    val start = s1.map{_.get}.flatten.toArray
+    val lengths = s1.map{_.get.length}
     val numArguments = start.length
 
     import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}

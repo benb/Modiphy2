@@ -364,6 +364,8 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
   import engine.partialLikelihoodCalc
   import engine.finalLikelihood
 
+  val numClasses = m.numClasses
+
   
   def model=m
    def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
@@ -436,8 +438,8 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
   lazy val logLikelihood:Double=logLikelihoodRoot()
 
   val leafPartialLikelihoods=immutableHashMapMemo{l:Letter=>l match {
-    case a if (a.isReal) => List.fill(l.alphabet.length)(0.0).updated(l.id,1.0)
-    case a => List.fill(l.alphabet.length)(1.0)
+    case a if (a.isReal) => (0 until numClasses).foldLeft(List.fill(l.alphabet.length * numClasses)(0.0)){(list,i)=>list.updated(l.id +(i * l.alphabet.matLength),1.0)} 
+    case a => List.fill(l.alphabet.length * numClasses)(1.0)
   }}
 
 
@@ -543,7 +545,6 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
   }
   
   def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix)={
-    //TODO opt
     new EnhancedMatrix(end) multipleDotProduct matrix
   }
 

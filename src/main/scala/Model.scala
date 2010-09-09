@@ -77,6 +77,24 @@ class ColtExp(mat:Matrix) extends Exp{
 
   def exp(bl:Double):LinearMatrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
 }
+class JBlasExp(m:Matrix) extends Exp{
+  import org.jblas.{DoubleMatrix,Solve,MatrixFunctions}
+  import org.jblas.Eigen._
+
+  lazy val mat = new DoubleMatrix(m.length,m.length,m.flatten:_*)
+  lazy val eigen = symmetricEigenvectors(mat)
+  lazy val u = eigen(0)
+  lazy val d = eigen(1)
+  lazy val v = Solve.solveSymmetric(u,DoubleMatrix.eye(u.getRows))
+
+  def exp(bl:Double):LinearMatrix = {
+    val ans = u.dup
+    val myD = MatrixFunctions.expi(d.dup.mmul(bl))
+    u.mmul(myD).mmul(v)
+    ans.toArray2.toList.map{_.toList}
+  }
+
+}
 abstract class ExpFactory{
   def apply(mat:Matrix):Exp=make(mat)
   def apply(mat:Matrix,pi:IndexedSeq[Double]):Exp=apply(mat.sToQ(pi))
@@ -91,8 +109,11 @@ abstract class CachingExpFactory extends ExpFactory{
 object ColtExpFactory extends CachingExpFactory{
   def make(mat:Matrix)=new ColtExp(mat)
 }
+object JBlasExpFactory extends CachingExpFactory{
+  def make(mat:Matrix)=new JBlasExp(mat)
+}
 object DefaultExpFactory extends ExpFactory{
-  var default:ExpFactory=ColtExpFactory
+  var default:ExpFactory=JBlasExpFactory
   def make(mat:Matrix)=default.apply(mat)
   def setDefault(fact:ExpFactory){default=fact}
 }

@@ -4,7 +4,8 @@ import modiphy.tree._
 import modiphy.util._
 import scala.collection.LinearSeq
 import modiphy.opt._
-
+import modiphy.alignment.Alphabet
+import modiphy.math._
 
 object Types{
   type Matrix=IndexedSeq[IndexedSeq[Double]]
@@ -107,6 +108,9 @@ object BasicLikelihoodModel{
   def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],rate:Double,subModelIndex:Int):BasicLikelihoodModel={
     new BasicLikelihoodModel(piValues,s,rate,DefaultExpFactory(s,piValues),subModelIndex)
   }
+  def zeroRate(piValues:IndexedSeq[Double],subModelIndex:Int)={
+    new InvarLikelihoodModel(piValues,subModelIndex)
+  }
 }
 /*
   Site class model with one n*m n*m matrix for n site classes of m-length alphabet.
@@ -124,23 +128,102 @@ object StdSiteClassModel{
     new StdSiteClassModel(models,Vector.fill(models.length)(1.0/models.length),0,None,None)
   }
 }
-class StdSiteClassModel(subModel:Seq[StdModel],priors:IndexedSeq[Double],modelIndex:Int=0,var bigMat:Option[IndexedSeq[IndexedSeq[Double]]],var myExp:Option[Exp]) extends StdModel{
+
+class ThmmSiteClassModel(realSwitchingModel:StdSiteClassModel,sigma:Double,alphabet:Alphabet,var bigMat:Option[IndexedSeq[IndexedSeq[Double]]],var myExp:Option[Exp]) extends StdModel{
+  override def numClasses = realSwitchingModel.numClasses
+  def modelIndex=realSwitchingModel.modelIndex
+  lazy val mat = {
+    bigMat getOrElse{
+      val len = alphabet.matLength
+      var ans = realSwitchingModel.mat
+      for (i <- 0 until numClasses){
+        for (j <- i+1 until numClasses){
+          for (x <- 0 until len){
+            val myI = i * len + x
+            val myJ = j * len +x
+            ans = ans.updated(myI,ans(myI).updated(myJ,sigma * pi()(myJ)))
+            ans = ans.updated(myJ,ans(myJ).updated(myI,sigma * pi()(myI)))
+          }
+        }
+      }
+      ans = ans.fixDiag
+      bigMat=Some(ans)
+      ans
+    }
+  }
+  def pi() = realSwitchingModel.pi
+  def pi(n:Node) = realSwitchingModel.pi(n)
+  lazy val exp = myExp.getOrElse{val ans = DefaultExpFactory(mat); myExp = Some(ans); ans}
+  def mySigma(p:ParamName,paramIndex:Option[Int])={ (p==Sigma && (paramIndex.isEmpty || paramIndex.get==modelIndex)) }
+  def preserveCache(p:ParamName,paramIndex:Option[Int])={
+    (p,paramIndex) match {
+      case (Sigma,Some(modelIndex))=>true
+      case (Sigma,None)=>true
+      case _ => realSwitchingModel.preserveCache(p,paramIndex)
+    }
+  }
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    if (mySigma(p,paramIndex)){
+      new ThmmSiteClassModel(realSwitchingModel,vec(0),alphabet,bigMat,myExp)
+    }else {
+      val cache = if (preserveCache(p,paramIndex)){ (bigMat,myExp)}else {(None,None)}
+      new ThmmSiteClassModel(realSwitchingModel.updatedVec(p,vec,paramIndex),sigma,alphabet,cache._1,cache._2)
+    }
+  }
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
+      val cache = if (preserveCache(p,paramIndex)){ (bigMat,myExp)}else {(None,None)}
+      new ThmmSiteClassModel(realSwitchingModel.updatedMat(p,mat,paramIndex),sigma,alphabet,cache._1,cache._2)
+  }
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    p match {
+      case Sigma if (paramIndex.isEmpty || paramIndex.get==modelIndex) => new ThmmSiteClassModel(realSwitchingModel,vec(0),alphabet,None,None)
+      case any => {
+        val cache = if (preserveCache(p,paramIndex)){ (bigMat,myExp)}else {(None,None)}
+        new ThmmSiteClassModel(realSwitchingModel.setOptParam(p,vec,paramIndex),sigma,alphabet,cache._1,cache._2)
+      }
+    }
+  }
+  def getOptParam(p:ParamName,paramIndex:Option[Int])={
+     if (p==Sigma && (paramIndex.isEmpty || paramIndex.get==modelIndex)){
+       Some(Vector(sigma))
+     }else {
+       realSwitchingModel.getOptParam(p,paramIndex)
+     }
+   }
+ 
+  def updatedRate(r:Double)={
+    new ThmmSiteClassModel(realSwitchingModel.updatedRate(r),sigma,alphabet,None,None)
+  }
+
+}
+
+
+
+class StdSiteClassModel(subModel:Seq[StdModel],priors:IndexedSeq[Double],val modelIndex:Int=0,var bigMat:Option[IndexedSeq[IndexedSeq[Double]]],var myExp:Option[Exp]) extends StdModel{
   override val numClasses = priors.length
-  lazy val mat = bigMat getOrElse {
-    val ans = subModel.map{_.mat}.foldLeft[IndexedSeq[IndexedSeq[Double]]]( Vector[Vector[Double]]() ){(m,m2)=>m addClass m2}
+  def mat = intMat
+  private lazy val intMat = bigMat getOrElse {
+    val ans = subModel.map{_.mat}.foldLeft[IndexedSeq[IndexedSeq[Double]]]( Vector[Vector[Double]]() ){(m,m2)=>m addClass m2}.normalise(pi)
     bigMat = Some(ans)
     ans
   }
   lazy val pi = subModel.map{_.pi}.zip(priors).map{t=> t._1.map{_*t._2}}.flatten.toIndexedSeq
   lazy val exp = myExp.getOrElse{val ans = DefaultExpFactory(mat); myExp = Some(ans); ans}
   def pi(n:Node)=pi
-  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+  def preserveCache(p:ParamName,paramIndex:Option[Int])={
+    (p,paramIndex) match {
+      case (MixturePrior,Some(modelIndex))=>true
+      case (MixturePrior,None)=>true
+      case _ => false 
+    }
+  }
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdSiteClassModel={
     p match {
       case MixturePrior if (paramIndex.isEmpty || paramIndex.get==modelIndex) => new StdSiteClassModel(subModel,vec,modelIndex,bigMat,myExp)
       case any => new StdSiteClassModel(subModel.map{_.updatedVec(p,vec,paramIndex)},priors,modelIndex,None,None)
     }
   }
-  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdSiteClassModel= {
      new StdSiteClassModel(subModel.map{_.updatedMat(p,vec,paramIndex)},priors,modelIndex,bigMat,myExp)
    }
    def getOptParam(p:ParamName,paramIndex:Option[Int])={
@@ -156,7 +239,7 @@ class StdSiteClassModel(subModel:Seq[StdModel],priors:IndexedSeq[Double],modelIn
        }
      }
    }
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdSiteClassModel={
     p match {
       case MixturePrior if (paramIndex.isEmpty || paramIndex.get==modelIndex) => new StdSiteClassModel(subModel,MixturePrior.getReal(vec),modelIndex,bigMat,myExp)
       case any => new StdSiteClassModel(subModel.map{_.setOptParam(p,vec,paramIndex)},priors,modelIndex,None,None)
@@ -165,6 +248,44 @@ class StdSiteClassModel(subModel:Seq[StdModel],priors:IndexedSeq[Double],modelIn
   def updatedRate(r:Double):StdSiteClassModel={error ("Rate currently unimplemented for StdSiteClassModel"); this}
 }
 
+/*
+  Uses an explicit zeroed rate matrix for inclusion in a THMM/Covarion model
+*/
+class InvarLikelihoodModel(piValues:IndexedSeq[Double],override val subModelIndex:Int=0) extends StdModel{
+  lazy val mat = EnhancedIndexedMatrix.zero(piValues.length)
+  lazy val exp = new Exp{
+    val intExp = EnhancedLinearMatrix.eye(piValues.length)
+    def exp(bl:Double)={
+      intExp
+    }  
+  }
+  def pi(n:Node)=piValues
+  def pi = piValues
+  def updatedRate(r:Double)={this}
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    val mI = paramIndex getOrElse subModelIndex
+    (p,mI) match {
+      case (Pi,`subModelIndex`) => new InvarLikelihoodModel(vec,subModelIndex) 
+    }
+  }
+  def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
+    this
+  }
+  def getOptParam(p:ParamName,modelIndex:Option[Int])={
+    val mI = modelIndex.getOrElse(subModelIndex)
+    (p,mI) match {
+      case (Pi,`subModelIndex`)=> Some(Pi.getOpt(piValues))
+      case (_,_) => None
+    }
+  }
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],modelIndex:Option[Int])={
+    val mI = modelIndex.getOrElse(subModelIndex)
+    (p,mI) match {
+      case (Pi,`subModelIndex`)=> new InvarLikelihoodModel(Pi.getReal(vec),subModelIndex)
+    }
+  }
+
+}
 class BasicLikelihoodModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]], override val rate:Double, val exp:Exp,override val subModelIndex:Int=0) extends StdModel{
   val mat = s.sToQ(piValues,rate)
   def pi(n:Node) = piValues

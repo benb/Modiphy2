@@ -11,6 +11,10 @@ trait ParamName{
 
 case object Pi extends PiParamName
 case object MixturePrior extends PiParamName 
+case object Sigma extends ParamName{
+  def lower(i:Int)=0.0
+  def upper(i:Int)=100.0
+}
 trait PiParamName extends ParamName{
   def getReal(d:IndexedSeq[Double])={
     val exponentiated =  d.map{i=>math.exp(i)}

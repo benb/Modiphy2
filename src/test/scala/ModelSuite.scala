@@ -5,6 +5,7 @@ import modiphy.model._
 import modiphy.tree._
 import modiphy.math.constants._
 import modiphy.opt._
+import modiphy.math.EnhancedMatrix._
 import ModelData._
 
 class ModelSuite extends FunSuite {
@@ -36,9 +37,7 @@ class ModelSuite extends FunSuite {
       val tree3 = tree setBranchLength (2, tree.getBranchLength(2))
       lkl.updated(tree2).updated(tree3).logLikelihood should be (-6057.892394 plusOrMinus 0.001) 
     }
-    
-   
-      }
+  }
   test("Gamma mixture model should match PAML"){
     val model = GammaModel(WAG.pi,WAG.S,0.5,4)
     val tree = Tree(treeStr)
@@ -99,6 +98,20 @@ class ModelSuite extends FunSuite {
     val lkl = new SimpleLikelihoodCalc(tree,thmm,aln)
     val optModel = new OptModel(lkl,tree,aln)
     optModel.logLikelihood should be (-5810.399586 plusOrMinus 0.001)
+  }
+
+  test("THMM"){
+    val tree = Tree(pfTree)
+    val aln = Fasta(pfAln).parseWith(AminoAcid)
+    val pi = Vector(0.024191,0.002492,0.002932,0.002492,0.001906,0.002492,0.006304,0.023018,0.002346,0.026683,0.034307,0.008943,0.007037,0.014808,0.005278,0.018326,0.013928,0.007477,0.007917,0.020379).normalise
+    println("PI " + pi)
+    val gammaModel = GammaModel(pi,WAG.S,3.270690,4)
+    val zeroModel = BasicLikelihoodModel.zeroRate(pi,1)
+    val bigMatModel = StdSiteClassModel(gammaModel.models :+ zeroModel,Vector.fill(4){(1.0-0.066963)/4} :+ 0.066963,0)
+    val thmm = new ThmmSiteClassModel(bigMatModel,2.415327,AminoAcid,None,None)
+    val lkl = new SimpleLikelihoodCalc(tree,thmm,aln)
+    val optModel = new OptModel(lkl,tree,aln)
+    optModel.logLikelihood should be (-2973.2188766283607 plusOrMinus 1e-2) // lnL from modiphy1
   }
   
 }

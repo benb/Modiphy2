@@ -35,7 +35,28 @@ class EnhancedIndexedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
     val ans = mat.map{_ ++ end} ++ mat2.map{ start ++ _}
     ans
   }
+  def prettyString={
+    mat.map{_.prettyString}.mkString("\n")
+  }
 }
+object EnhancedIndexedMatrix{
+  def eye(n:Int)={
+    Vector.tabulate(n,n){(i,j) => if (j==i)(1.0)else{0.0}}
+  }
+  def zero(n:Int)={
+    Vector.fill(n,n){0.0}
+  }
+}
+object EnhancedLinearMatrix{
+  def eye(n:Int)={
+    List.tabulate(n,n){(i,j) => if (j==i)(1.0)else{0.0}}
+  }
+  def zero(n:Int)={
+    List.fill(n,n){0.0}
+  }
+}
+
+
 class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
   import EnhancedMatrix._
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
@@ -111,6 +132,18 @@ class EnhancedIndexedVector(seq:IndexedSeq[Double]) extends EnhancedVector[Index
   }
   def prod(vect:Seq[Double])={
     seq.zip(vect).map{t=>t._1*t._2}
+  }
+  def prettyString={
+    import java.text.DecimalFormat
+    val format = new DecimalFormat("0.000000")
+
+      seq.map{d=>
+        d match {
+          case 0.0 => "0.0     "
+          case num if (num>0.0) => " " + format.format(num)
+          case num => format.format(num)
+        }
+      }.mkString(" ")
   }
 }
 class EnhancedListVector(seq:LinearSeq[Double]) extends EnhancedVector[LinearSeq[Double]]{

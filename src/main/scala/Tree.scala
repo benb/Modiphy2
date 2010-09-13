@@ -36,6 +36,8 @@ class INode extends Node
 
 object TreeTest{
   def main(args:Array[String]){
+    import modiphy.test.ModelData._
+    import modiphy.math.constants._
     /*
     val iNode1 = new INode
     val iNode2 = new INode
@@ -44,13 +46,13 @@ object TreeTest{
     println(tree)
     println(tree.treeLength)
     */
-    import modiphy.test.ModelData._
-    import modiphy.math.constants._
+    /*
 
     if(args.length >1 && (args(1) startsWith "par")){Parallel.on=true}
     if(args.length >1 && (args(1) startsWith "nopar")){Parallel.on=false}
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
+    */
 /*
     val model = BasicLikelihoodModel(WAG.pi,WAG.S)
 
@@ -60,13 +62,19 @@ object TreeTest{
       println(lkl.logLikelihood)
     }
     */
+    /*
     val model = GammaModel(aln.frequencies,WAG.S,0.5,4)
     val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
     val optModel = new OptModel(lkl,tree,aln)
     optModel optimiseAll Gamma
     optModel optimiseAll (Pi,Gamma)
     println(optModel)
-  }
+    */
+
+    val tree = Tree(tufaTree)
+    val aln  = new Fasta(tufaAln.lines) parseWith AminoAcid
+    }
+    
 }
 
 object Tree{
@@ -301,7 +309,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 }
 
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixtureModel,lkl:Option[Seq[SimpleLikelihoodCalc]]=None) extends LikelihoodCalc[StdMixtureModel]{
+class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[SimpleLikelihoodCalc]]=None) extends LikelihoodCalc[Model]{
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
@@ -332,7 +340,7 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
     ans
   }
   def updated(t:Tree)=new MixtureLikelihoodCalc(priors,t,aln,m,lkl)
-  def updated(m:StdMixtureModel)=new MixtureLikelihoodCalc(priors,tree,aln,m,lkl)
+  def updated(m:Model)=new MixtureLikelihoodCalc(priors,tree,aln,m,lkl)
 
    def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
@@ -357,7 +365,7 @@ trait LikelihoodCalc[A <: Model]{
    def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def model:A
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[StdModel]{
+class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[Model]{
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
@@ -443,7 +451,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
   }}
 
 
-  def factory(t:modiphy.tree.Tree,m:StdModel,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
+  def factory(t:modiphy.tree.Tree,m:Model,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
 
   def updated(t:modiphy.tree.Tree)={
     /*
@@ -459,7 +467,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
     factory(t,m,aln)
   }
 
-  def updated(m:StdModel)={
+  def updated(m:Model)={
     factory(tree,m,aln)//,Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]())
   }
 }

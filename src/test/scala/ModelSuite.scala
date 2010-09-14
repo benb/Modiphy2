@@ -34,7 +34,7 @@ class ModelSuite extends FunSuite {
       lkl.logLikelihood should be (-6057.892394 plusOrMinus 0.001)//from PAML
       val tree2 = tree setBranchLength (2,2.0)
       lkl.updated(tree2).logLikelihood should be < (-6057.892394)
-      val tree3 = tree setBranchLength (2, tree.getBranchLength(2))
+      val tree3 = tree setBranchLength (2, tree.getBranchLengths(2))
       lkl.updated(tree2).updated(tree3).logLikelihood should be (-6057.892394 plusOrMinus 0.001) 
     }
   }
@@ -78,6 +78,7 @@ class ModelSuite extends FunSuite {
     println(optModel.logLikelihood)
     println(optModel(Gamma))
     optModel(Gamma).get.head should be (0.57932 plusOrMinus 0.01)
+   // optModel optimiseAll BranchLengths
   }
   test("Site class model with 1 class"){
     val tree = Tree(treeStr)

@@ -31,6 +31,7 @@ case class Edge(left:Node,right:Node,dist:Double){
   }
   def to(n:Node)=from(n).flip
   def same(that:Edge) = this==that || flip==that
+  def different(that:Edge)= !(same(that))
 }
 class INode extends Node
 
@@ -86,6 +87,10 @@ object Tree{
   def apply(newick:String):Tree = {
     new TreeParser{def parseAll=parse(tree,newick)}.parseAll.get
   }
+  import java.io.File
+  def apply(file:File):Tree = {
+    apply(scala.io.Source.fromFile(file).getLines.map{_.trim}.mkString(""))
+  }
 }
 
 trait TreePosition{
@@ -137,8 +142,43 @@ class Tree(edges:IndexedSeq[Edge],
 
   lazy val branchLength = edges.map{_.dist}.toIndexedSeq
 
+
+  def drop(leafName:String)={
+    val hasEdge = edgeMap.filter{t=> t._1==Leaf(leafName)}//.head._2.head
+    if (hasEdge.isEmpty){
+      this
+    }else {
+      val upEdge = hasEdge.head._2.head
+      val iNode = upEdge from Leaf(leafName) right
+
+      val newNodes = nodes.filter{n=> n!=Leaf(leafName) } 
+      val newEdges = edgeMap.filter{t=> t._1!=Leaf(leafName)}.map{t=> (t._1, t._2.filter{e=>e different upEdge})}
+      new Tree(edges.filter{e => e different upEdge},newNodes,newEdges,None,root,None) dropIfSafe (iNode.asInstanceOf[INode])
+    }
+  }
+  def dropIfSafe(iNode:INode)={
+    if (edgeMap(iNode).length >2 ){
+      this
+    }else {
+      val uselessEdges = edgeMap(iNode)
+      val len = uselessEdges.map{_.dist}.reduceLeft{_+_}
+      val ends = uselessEdges.map{_ from iNode right}
+
+      val newEdge = Edge(ends(0),ends(1),len)
+        val newEdgeMap = edgeMap.filter{t=> t._1 != iNode}.updated(ends(0), newEdge::edgeMap(ends(0)).filter{e=> e different uselessEdges(0)}).updated(ends(1),newEdge::edgeMap(ends(1)).filter{e=> e different uselessEdges(1)})
+
+        new Tree(edges.filter{e=>uselessEdges.find(e2=> e same e2).isEmpty}, nodes.filter{n=> n!=iNode},newEdgeMap) 
+    }
+  }
+
+  def restrictTo(list:Seq[String])={
+    val remove = leafNodes.map{_.name}.filter{name => !list.contains{name}}
+    remove.foldLeft(this){(tree,leaf)=> tree.drop(leaf)}
+  }
   
 
+  def numNodes = nodes.size
+  def numLeaves = nodes.filter{n => n.isInstanceOf[Leaf]}.size
   
 
   val iNodes = startiNodes.getOrElse(nodes.filter{_.isInstanceOf[INode]}.map{_.asInstanceOf[INode]}).toIndexedSeq
@@ -209,7 +249,9 @@ class Tree(edges:IndexedSeq[Edge],
     val e = oldEdge
     val newEdge = edges(i).copy(dist=d)
     val myNewEdgeMap = edgeMap.updated(e.left,newEdge::edgeMap(e.left).filter{_!=oldEdge}).updated(e.right,newEdge::edgeMap(e.right).filter{_!=oldEdge})
-      copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
+      val ans = copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
+  //    println("New tree " + i + " " + d + " " + ans)
+    ans
   }
   def setBranchLengths(vec:Seq[Double])={
     var myNewEdgeMap = edgeMap
@@ -224,7 +266,7 @@ class Tree(edges:IndexedSeq[Edge],
     }
     copy(newEdges=edges2,newEdgeMap = myNewEdgeMap)
   }
-  lazy val getBranchLength = edges.map{_.dist}
+  lazy val getBranchLengths = edges.map{_.dist}
 
   def treeLength = edges.map{_.dist}.foldLeft(0.0D){_+_}
   def getEdges=edgeMap

@@ -18,10 +18,11 @@ class EnhancedIndexedMatrix(mat:IndexedSeq[IndexedSeq[Double]]){
       row.updated(i,-sum)
     }
   }
+  def zSum(pi:Seq[Double]) = diag.zip(pi).map{t=>t._1*t._2}.sum
   def normalise(pi:IndexedSeq[Double],rate:Double=1.0)={
-    val zSum = mat.diag.zip(pi).map{t=>t._1*t._2}.sum
+    val z=zSum(pi)
     mat.map{row=>
-      row.map{_ / -zSum * rate}
+      row.map{_ / -z * rate}
     }
   }
   def diag={
@@ -139,7 +140,7 @@ class EnhancedIndexedVector(seq:IndexedSeq[Double]) extends EnhancedVector[Index
 
       seq.map{d=>
         d match {
-          case 0.0 => "0.0     "
+          case 0.0 => " 0.0     "
           case num if (num>0.0) => " " + format.format(num)
           case num => format.format(num)
         }

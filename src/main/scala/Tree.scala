@@ -350,18 +350,30 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
   def apply=new IndexedSeqLikelihoodCalc
 }
 
+/*
+class PatternMatchLikelihoodCalc(aln:Alignment,likelihood:Pattern=>Double) extends LikelihoodCalc[Model]{
+  lazy val likelihoods=aln.patternList.map{likelihood(_)}
+  def updated(t:Tree)=this
+  def updated(m:Model)=this
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])=this
+  def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])=this
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])=this
+  def logLikelihood = likelihoods.zip(aln.countList).map{t=> math.log(t._1)*t._2}.reduceLeft{_+_}
+  def model = error("Unimplemented")
+}*/
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[SimpleLikelihoodCalc]]=None) extends LikelihoodCalc[Model]{
+class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc[Model]]]=None) extends LikelihoodCalc[Model]{
+  def priors = m.priors
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
-  lazy val logLikelihood={
-    val likelihoods = if (Parallel.on && false){
+  lazy val likelihoods  = {
+    val myLikelihoods = if (Parallel.on && false){
       import jsr166y._
-      class Calc(subModels:List[(SimpleLikelihoodCalc,Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
+      class Calc(subModels:List[(LikelihoodCalc[Model],Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
         def compute = {
           subModels match {
-            case model::Nil => subModels.map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+            case model::Nil => subModels.map{t=> t._1.likelihoods.map{_ * t._2}}.map{_.iterator}
             case model::tail => subModels.map{model => new Calc(List(model))}.map{_.fork}.map{_.join}.map{_.head}
             case Nil => Nil
           }
@@ -371,23 +383,28 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:Model,l
       Parallel.forkJoinPool submit calc
       calc.join
     }else {
-      lklCalc.zip(priors).map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+      lklCalc.zip(priors).map{t=> 
+        t._1.likelihoods.map{_ * t._2}
+      }.map{_.iterator}
     }
-    var ans =  0.0
-    val patternCount = aln.countList.iterator
-    while (likelihoods.head.hasNext){
-      val row = likelihoods.map{_.next}
-      ans = ans + math.log(row.reduceLeft{_+_}) * patternCount.next
+    var ans = List[Double]()
+    while (myLikelihoods.head.hasNext) {
+      ans = myLikelihoods.map{_.next}.reduceLeft{_+_} ::ans
     }
-    ans
+    ans.reverse
   }
-  def updated(t:Tree)=new MixtureLikelihoodCalc(priors,t,aln,m,lkl)
-  def updated(m:Model)=new MixtureLikelihoodCalc(priors,tree,aln,m,lkl)
+  lazy val logLikelihood={
+    val patternCount = aln.countList
+    likelihoods.zip(patternCount).map{t=> math.log(t._1)*t._2}.reduceLeft{_+_}
+  }
 
-   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
-   def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
-   def model =m
-   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
+  def updated(t:Tree)=new MixtureLikelihoodCalc(t,aln,m,lkl)
+  def updated(m:Model)=new MixtureLikelihoodCalc(tree,aln,m,lkl)
+
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
+  def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
+  def model =m
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
 }
 
 /*
@@ -406,6 +423,7 @@ trait LikelihoodCalc[A <: Model]{
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
    def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def model:A
+   def likelihoods:LinearSeq[Double]
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[Model]{
   import SimpleLikelihoodCalc._
@@ -478,14 +496,17 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
     }
 
 
-  def likelihoods(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
+  def likelihoods(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):LinearSeq[Double]={
     finalLikelihood(partialLikelihoods(root),m.pi(root.get))
   }
+  def likelihoods = likelihoods()
 
   def logLikelihoodRoot(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
     likelihoods(root).zip(aln.countList).map{t=>math.log(t._1)*t._2}.reduceLeft{_+_}
   }
-  lazy val logLikelihood:Double=logLikelihoodRoot()
+  lazy val logLikelihood:Double={
+    logLikelihoodRoot()
+  }
 
   val leafPartialLikelihoods=immutableHashMapMemo{l:Letter=>l match {
     case a if (a.isReal) => (0 until numClasses).foldLeft(List.fill(l.alphabet.length * numClasses)(0.0)){(list,i)=>list.updated(l.id +(i * l.alphabet.matLength),1.0)} 

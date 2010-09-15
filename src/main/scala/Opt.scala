@@ -118,6 +118,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           case Some(i) => update(p,value(0),paramIndex)
         }
       case v:VectorParamName => calc = calc.updatedVec(v,value,paramIndex)
+      case s:SingleParamName => calc = calc.updatedVec(VectorParamWrapper(s),value,paramIndex)
     }
   }
 
@@ -166,7 +167,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
       list.filter{t2=> t2._2.isEmpty || Some(t._2)==t2._2}.map{_._1}.contains(t._1) 
     } 
     val s1 = optParams.map{t=>getOptParam(t._1,Some(t._2))}
-    if (s1 contains None){error("Not all specified params exist!")}
+    if (s1 contains None){error("Not all specified params exist! " + s1.toList + " " + optParams )}
     val start = s1.map{_.get}.flatten.toArray
     val lengths = s1.map{_.get.length}
     val numArguments = start.length

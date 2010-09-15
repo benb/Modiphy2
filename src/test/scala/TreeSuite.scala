@@ -9,6 +9,8 @@ class TreeSuite extends FunSuite {
   test("parse"){
     println(tree)
     val otherNode = tree.traverseFrom("Euglena").get.neighbours.map{_.get}.collect{case i:INode=>i}.head
+    tree.getBranchLengths.length should equal (29)
+
     println(tree reRoot otherNode)
     val bl1 = tree branchLength 3
     val t2 = tree setBranchLength(3,bl1+1.3)

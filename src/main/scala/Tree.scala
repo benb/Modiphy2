@@ -133,7 +133,7 @@ trait TreePositionDir extends RootedTreePosition{
   val tree:Tree
 }
 
-class Tree(edges:IndexedSeq[Edge],
+class Tree(val edges:IndexedSeq[Edge],
   nodes:Set[Node],
   edgeMap:Map[Node,List[Edge]],
   startiNodes:Option[Set[INode]] = None,
@@ -167,7 +167,7 @@ class Tree(edges:IndexedSeq[Edge],
       val newEdge = Edge(ends(0),ends(1),len)
         val newEdgeMap = edgeMap.filter{t=> t._1 != iNode}.updated(ends(0), newEdge::edgeMap(ends(0)).filter{e=> e different uselessEdges(0)}).updated(ends(1),newEdge::edgeMap(ends(1)).filter{e=> e different uselessEdges(1)})
 
-        new Tree(edges.filter{e=>uselessEdges.find(e2=> e same e2).isEmpty}, nodes.filter{n=> n!=iNode},newEdgeMap) 
+        new Tree(edges.filter{e=>uselessEdges.find(e2=> e same e2).isEmpty} :+ newEdge, nodes.filter{n=> n!=iNode},newEdgeMap) 
     }
   }
 

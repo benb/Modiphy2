@@ -8,15 +8,36 @@ trait ParamName{
   def lower(i:Int):Double
   def upper(i:Int):Double 
 }
+case class VectorParamWrapper(s:SingleParamName) extends VectorParamName{
+  def lower(i:Int)=s.lower(i)
+  def upper(i:Int)=s.upper(i)
+
+}
+trait SingleParamName extends ParamName{
+  def getOpt(v:Double)=Vector(v)
+  def getReal(v:IndexedSeq[Double])=v(0)
+}
+trait VectorParamName extends ParamName{
+  def getOpt(v:IndexedSeq[Double])=v
+  def getReal(v:IndexedSeq[Double])=v
+}
+trait MatrixParamName extends ParamName{
+  def getOpt(v:IndexedSeq[IndexedSeq[Double]]):IndexedSeq[Double]
+  def getReal(v:IndexedSeq[Double]):IndexedSeq[IndexedSeq[Double]]
+}
 
 case object Pi extends PiParamName
 case object MixturePrior extends PiParamName 
-case object Sigma extends ParamName{
+case object Rate extends SingleParamName{
+  def lower(i:Int)=0.0
+  def upper(i:Int)=10000.0
+}
+case object Sigma extends SingleParamName{
   def lower(i:Int)=0.0
   def upper(i:Int)=100.0
 }
-trait PiParamName extends ParamName{
-  def getReal(d:IndexedSeq[Double])={
+trait PiParamName extends VectorParamName{
+  override def getReal(d:IndexedSeq[Double])={
     val exponentiated =  d.map{i=>math.exp(i)}
     val total = exponentiated.reduceLeft{_+_} + math.exp(0.0D)
     val ans = new scala.collection.immutable.VectorBuilder[Double]
@@ -24,17 +45,18 @@ trait PiParamName extends ParamName{
     ans ++= (0 until d.length).map{i=> exponentiated(i)/total}
     ans.result
   }
-  def getOpt(d:IndexedSeq[Double])={
+  override def getOpt(d:IndexedSeq[Double])={
     val head=d.head
     d.tail.map{i=>math.log(i/head)}
   }
   def lower(i:Int)= -10.0
   def upper(i:Int)=10.0
 }
-case object S extends ParamName{
+case object S extends MatrixParamName{
   def lower(i:Int)=0.0
   def upper(i:Int)=50.0
-  def getOpt(d:Seq[Seq[Double]]):IndexedSeq[Double]={
+  def getOpt(d:Seq[Seq[Double]]):IndexedSeq[Double]=getOpt(d.map{_.toIndexedSeq}.toIndexedSeq)
+  def getOpt(d:IndexedSeq[IndexedSeq[Double]]):IndexedSeq[Double]={
     var initial = d(1)(0) match {
       case 1.0=>d
       case norm => d.map{_.map{_/norm}}
@@ -43,9 +65,9 @@ case object S extends ParamName{
      initial = initial.tail 
      initial.head.take(i)
     }
-    ans.flatten
+    ans.flatten.tail
   }
-  def getReal(d:Seq[Double])={
+  def getReal(d:IndexedSeq[Double])={
     val len = d.length+1
     val matsize = 1 + (math.sqrt(8*len+1).toInt -1)/2 //from triangular root
     val initial = List(1.0).iterator ++ d.iterator
@@ -55,12 +77,12 @@ case object S extends ParamName{
   }
 }
 
-case object BranchLengths extends ParamName{
+case object BranchLengths extends SingleParamName{
   def lower(i:Int)=0.0
   def upper(i:Int)=100.0
 }
 
-case object Gamma extends ParamName{
+case object Gamma extends SingleParamName{
   lazy val gamma = new GammaDist
   def lower(i:Int)=0.01
   def upper(i:Int)=1000.0
@@ -84,7 +106,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           case None => cantHandle(p,d,paramIndex)
           case Some(i) => tree = tree.setBranchLength(i,d);updatedTree()
         }
-      case any => calc=calc.updatedVec(any,Vector(d),paramIndex)
+      case s:SingleParamName => calc=calc.updatedVec(VectorParamWrapper(s),Vector(d),paramIndex) //FIXME
     }
   }
 
@@ -95,14 +117,14 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           case None => tree = tree.setBranchLengths(value);updatedTree()
           case Some(i) => update(p,value(0),paramIndex)
         }
-      case any => calc = calc.updatedVec(p,value,paramIndex)
+      case v:VectorParamName => calc = calc.updatedVec(v,value,paramIndex)
     }
   }
 
   def update(p:ParamName,value:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]=None)(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){
     p match {
       case BranchLengths=> cantHandle(p,value,paramIndex)
-      case any => calc = calc.updatedMat(p,value,paramIndex)
+      case m:MatrixParamName => calc = calc.updatedMat(m,value,paramIndex)
     }
   }
 

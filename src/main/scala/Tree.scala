@@ -31,11 +31,14 @@ case class Edge(left:Node,right:Node,dist:Double){
   }
   def to(n:Node)=from(n).flip
   def same(that:Edge) = this==that || flip==that
+  def different(that:Edge)= !(same(that))
 }
 class INode extends Node
 
 object TreeTest{
   def main(args:Array[String]){
+    import modiphy.test.ModelData._
+    import modiphy.math.constants._
     /*
     val iNode1 = new INode
     val iNode2 = new INode
@@ -44,13 +47,13 @@ object TreeTest{
     println(tree)
     println(tree.treeLength)
     */
-    import modiphy.test.ModelData._
-    import modiphy.math.constants._
+    /*
 
     if(args.length >1 && (args(1) startsWith "par")){Parallel.on=true}
     if(args.length >1 && (args(1) startsWith "nopar")){Parallel.on=false}
     val tree = Tree(treeStr)
     val aln = Fasta(alnStr).parseWith(AminoAcid)
+    */
 /*
     val model = BasicLikelihoodModel(WAG.pi,WAG.S)
 
@@ -60,13 +63,19 @@ object TreeTest{
       println(lkl.logLikelihood)
     }
     */
+    /*
     val model = GammaModel(aln.frequencies,WAG.S,0.5,4)
     val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
     val optModel = new OptModel(lkl,tree,aln)
     optModel optimiseAll Gamma
     optModel optimiseAll (Pi,Gamma)
     println(optModel)
-  }
+    */
+
+    val tree = Tree(tufaTree)
+    val aln  = new Fasta(tufaAln.lines) parseWith AminoAcid
+    }
+    
 }
 
 object Tree{
@@ -77,6 +86,10 @@ object Tree{
   }
   def apply(newick:String):Tree = {
     new TreeParser{def parseAll=parse(tree,newick)}.parseAll.get
+  }
+  import java.io.File
+  def apply(file:File):Tree = {
+    apply(scala.io.Source.fromFile(file).getLines.map{_.trim}.mkString(""))
   }
 }
 
@@ -129,8 +142,43 @@ class Tree(edges:IndexedSeq[Edge],
 
   lazy val branchLength = edges.map{_.dist}.toIndexedSeq
 
+
+  def drop(leafName:String)={
+    val hasEdge = edgeMap.filter{t=> t._1==Leaf(leafName)}//.head._2.head
+    if (hasEdge.isEmpty){
+      this
+    }else {
+      val upEdge = hasEdge.head._2.head
+      val iNode = upEdge from Leaf(leafName) right
+
+      val newNodes = nodes.filter{n=> n!=Leaf(leafName) } 
+      val newEdges = edgeMap.filter{t=> t._1!=Leaf(leafName)}.map{t=> (t._1, t._2.filter{e=>e different upEdge})}
+      new Tree(edges.filter{e => e different upEdge},newNodes,newEdges,None,root,None) dropIfSafe (iNode.asInstanceOf[INode])
+    }
+  }
+  def dropIfSafe(iNode:INode)={
+    if (edgeMap(iNode).length >2 ){
+      this
+    }else {
+      val uselessEdges = edgeMap(iNode)
+      val len = uselessEdges.map{_.dist}.reduceLeft{_+_}
+      val ends = uselessEdges.map{_ from iNode right}
+
+      val newEdge = Edge(ends(0),ends(1),len)
+        val newEdgeMap = edgeMap.filter{t=> t._1 != iNode}.updated(ends(0), newEdge::edgeMap(ends(0)).filter{e=> e different uselessEdges(0)}).updated(ends(1),newEdge::edgeMap(ends(1)).filter{e=> e different uselessEdges(1)})
+
+        new Tree(edges.filter{e=>uselessEdges.find(e2=> e same e2).isEmpty}, nodes.filter{n=> n!=iNode},newEdgeMap) 
+    }
+  }
+
+  def restrictTo(list:Seq[String])={
+    val remove = leafNodes.map{_.name}.filter{name => !list.contains{name}}
+    remove.foldLeft(this){(tree,leaf)=> tree.drop(leaf)}
+  }
   
 
+  def numNodes = nodes.size
+  def numLeaves = nodes.filter{n => n.isInstanceOf[Leaf]}.size
   
 
   val iNodes = startiNodes.getOrElse(nodes.filter{_.isInstanceOf[INode]}.map{_.asInstanceOf[INode]}).toIndexedSeq
@@ -201,7 +249,9 @@ class Tree(edges:IndexedSeq[Edge],
     val e = oldEdge
     val newEdge = edges(i).copy(dist=d)
     val myNewEdgeMap = edgeMap.updated(e.left,newEdge::edgeMap(e.left).filter{_!=oldEdge}).updated(e.right,newEdge::edgeMap(e.right).filter{_!=oldEdge})
-      copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
+      val ans = copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
+  //    println("New tree " + i + " " + d + " " + ans)
+    ans
   }
   def setBranchLengths(vec:Seq[Double])={
     var myNewEdgeMap = edgeMap
@@ -216,7 +266,7 @@ class Tree(edges:IndexedSeq[Edge],
     }
     copy(newEdges=edges2,newEdgeMap = myNewEdgeMap)
   }
-  lazy val getBranchLength = edges.map{_.dist}
+  lazy val getBranchLengths = edges.map{_.dist}
 
   def treeLength = edges.map{_.dist}.foldLeft(0.0D){_+_}
   def getEdges=edgeMap
@@ -300,18 +350,30 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
   def apply=new IndexedSeqLikelihoodCalc
 }
 
+/*
+class PatternMatchLikelihoodCalc(aln:Alignment,likelihood:Pattern=>Double) extends LikelihoodCalc[Model]{
+  lazy val likelihoods=aln.patternList.map{likelihood(_)}
+  def updated(t:Tree)=this
+  def updated(m:Model)=this
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])=this
+  def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])=this
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])=this
+  def logLikelihood = likelihoods.zip(aln.countList).map{t=> math.log(t._1)*t._2}.reduceLeft{_+_}
+  def model = error("Unimplemented")
+}*/
 
-class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixtureModel,lkl:Option[Seq[SimpleLikelihoodCalc]]=None) extends LikelihoodCalc[StdMixtureModel]{
+class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc[Model]]]=None) extends LikelihoodCalc[Model]{
+  def priors = m.priors
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
-  lazy val logLikelihood={
-    val likelihoods = if (Parallel.on && false){
+  lazy val likelihoods  = {
+    val myLikelihoods = if (Parallel.on && false){
       import jsr166y._
-      class Calc(subModels:List[(SimpleLikelihoodCalc,Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
+      class Calc(subModels:List[(LikelihoodCalc[Model],Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
         def compute = {
           subModels match {
-            case model::Nil => subModels.map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+            case model::Nil => subModels.map{t=> t._1.likelihoods.map{_ * t._2}}.map{_.iterator}
             case model::tail => subModels.map{model => new Calc(List(model))}.map{_.fork}.map{_.join}.map{_.head}
             case Nil => Nil
           }
@@ -321,23 +383,28 @@ class MixtureLikelihoodCalc(priors:Seq[Double],tree:Tree,aln:Alignment,m:StdMixt
       Parallel.forkJoinPool submit calc
       calc.join
     }else {
-      lklCalc.zip(priors).map{t=> t._1.likelihoods().map{_ * t._2}}.map{_.iterator}
+      lklCalc.zip(priors).map{t=> 
+        t._1.likelihoods.map{_ * t._2}
+      }.map{_.iterator}
     }
-    var ans =  0.0
-    val patternCount = aln.countList.iterator
-    while (likelihoods.head.hasNext){
-      val row = likelihoods.map{_.next}
-      ans = ans + math.log(row.reduceLeft{_+_}) * patternCount.next
+    var ans = List[Double]()
+    while (myLikelihoods.head.hasNext) {
+      ans = myLikelihoods.map{_.next}.reduceLeft{_+_} ::ans
     }
-    ans
+    ans.reverse
   }
-  def updated(t:Tree)=new MixtureLikelihoodCalc(priors,t,aln,m,lkl)
-  def updated(m:StdMixtureModel)=new MixtureLikelihoodCalc(priors,tree,aln,m,lkl)
+  lazy val logLikelihood={
+    val patternCount = aln.countList
+    likelihoods.zip(patternCount).map{t=> math.log(t._1)*t._2}.reduceLeft{_+_}
+  }
 
-   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
-   def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
-   def model =m
-   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
+  def updated(t:Tree)=new MixtureLikelihoodCalc(t,aln,m,lkl)
+  def updated(m:Model)=new MixtureLikelihoodCalc(tree,aln,m,lkl)
+
+  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
+  def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
+  def model =m
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
 }
 
 /*
@@ -356,8 +423,9 @@ trait LikelihoodCalc[A <: Model]{
    def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
    def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def model:A
+   def likelihoods:LinearSeq[Double]
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[StdModel]{
+class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[Model]{
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
@@ -428,14 +496,17 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
     }
 
 
-  def likelihoods(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Seq[Double]={
+  def likelihoods(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):LinearSeq[Double]={
     finalLikelihood(partialLikelihoods(root),m.pi(root.get))
   }
+  def likelihoods = likelihoods()
 
   def logLikelihoodRoot(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
     likelihoods(root).zip(aln.countList).map{t=>math.log(t._1)*t._2}.reduceLeft{_+_}
   }
-  lazy val logLikelihood:Double=logLikelihoodRoot()
+  lazy val logLikelihood:Double={
+    logLikelihoodRoot()
+  }
 
   val leafPartialLikelihoods=immutableHashMapMemo{l:Letter=>l match {
     case a if (a.isReal) => (0 until numClasses).foldLeft(List.fill(l.alphabet.length * numClasses)(0.0)){(list,i)=>list.updated(l.id +(i * l.alphabet.matLength),1.0)} 
@@ -443,7 +514,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
   }}
 
 
-  def factory(t:modiphy.tree.Tree,m:StdModel,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
+  def factory(t:modiphy.tree.Tree,m:Model,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
 
   def updated(t:modiphy.tree.Tree)={
     /*
@@ -459,7 +530,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:StdModel,val aln:Alignment,val engine
     factory(t,m,aln)
   }
 
-  def updated(m:StdModel)={
+  def updated(m:Model)={
     factory(tree,m,aln)//,Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]())
   }
 }

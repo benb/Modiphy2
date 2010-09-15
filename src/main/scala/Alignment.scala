@@ -47,6 +47,7 @@ object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K
 
 class Alignment(gen:Map[String,Iterable[Letter]]){
   val names = gen.keys.toList
+  def numSeqs = gen.size
   type Pattern=Map[String,Letter]
   val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Map[String,Letter]]()){(ml,col)=>
     names.zip(col).foldLeft(Map[String,Letter]()){(ml2,item)=>
@@ -70,6 +71,14 @@ class Alignment(gen:Map[String,Iterable[Letter]]){
     val total = countMap.filter{_._1.isReal}.values.reduceLeft(_+_)
     alphabet.matElements.map{countMap.getOrElse(_,0)}.map{_.toDouble/total}
   }.toIndexedSeq
+  def restrictTo(seqs:Iterable[String])={
+    new Alignment(gen.filter{t=>seqs exists{_==t._1}})
+  }
+  def toFasta={
+    gen.foldLeft(""){(s,t)=>
+      s + ">"+t._1 + "\n" + t._2.mkString("") + "\n" 
+    }
+  }
 }
 
 class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{
@@ -89,8 +98,10 @@ class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{
   }
 }
 object Fasta{
+  import java.io.File
   def apply(source:Iterator[String])=new Fasta(source)
   def apply(source:String)=new Fasta(source.lines)
+  def apply(source:File)=new Fasta(scala.io.Source.fromFile(source).getLines())
 }
 
 

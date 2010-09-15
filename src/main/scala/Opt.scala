@@ -72,7 +72,7 @@ case object Gamma extends ParamName{
 
 class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
   def m = calc.model
-  val myParams:List[(ParamName,Int)] = m.params 
+  val myParams:List[(ParamName,Int)] = m.params ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}
 
   def update(p:ParamName,d:Double){update(p,d,None)}
   def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,None)}
@@ -92,8 +92,8 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
     p match {
       case BranchLengths => 
         paramIndex match {
-          case None => tree = tree.setBranchLengths(value)
-          case Some(i) => cantHandle(p,value,paramIndex)
+          case None => tree = tree.setBranchLengths(value);updatedTree()
+          case Some(i) => update(p,value(0),paramIndex)
         }
       case any => calc = calc.updatedVec(p,value,paramIndex)
     }
@@ -107,11 +107,18 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
   }
 
   def setOptParam(p:ParamName,value:IndexedSeq[Double],paramIndex:Option[Int]){
-    calc = calc.setOptParam(p,value,paramIndex)
+    p match {
+      case BranchLengths => update(BranchLengths,value,paramIndex)
+      case _ => calc = calc.setOptParam(p,value,paramIndex)
+    }
   }
 
   def getOptParam(p:ParamName,paramIndex:Option[Int]=None)={
-    m.getOptParam(p,paramIndex)
+    (p,paramIndex) match {
+      case (BranchLengths,None) => Some(tree.getBranchLengths)
+      case (BranchLengths,Some(n)) => Some(Vector(tree.getBranchLengths(n)))
+      case _ => m.getOptParam(p,paramIndex)
+    }
   }
   def logLikelihood=calc.logLikelihood
   
@@ -135,7 +142,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
   def optimiseSeq(list:Seq[(ParamName,Option[Int])]){
     val optParams = myParams.filter{t=>
       list.filter{t2=> t2._2.isEmpty || Some(t._2)==t2._2}.map{_._1}.contains(t._1) 
-    }
+    } 
     val s1 = optParams.map{t=>getOptParam(t._1,Some(t._2))}
     if (s1 contains None){error("Not all specified params exist!")}
     val start = s1.map{_.get}.flatten.toArray
@@ -151,8 +158,8 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
         def getUpperBound(i:Int)=upperBound(i)
         val getNumArguments = numArguments
         def evaluate(params:Array[Double])={
-          val p2 = params.iterator
-          val splitP = lengths.map{l=> p2.take(l).toIndexedSeq}
+          var p2 = params.toList
+          val splitP = lengths.map{l=> val ans = p2.take(l).toIndexedSeq; p2 = p2.drop(l); ans}
           optParams.zip(splitP).foreach{ t=> val ((pName,pIndex),values)=t
             setOptParam(pName,values,Some(pIndex))
           }

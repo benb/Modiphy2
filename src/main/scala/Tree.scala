@@ -398,8 +398,8 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
     likelihoods.zip(patternCount).map{t=> math.log(t._1)*t._2}.reduceLeft{_+_}
   }
 
-  def updated(t:Tree)=new MixtureLikelihoodCalc(t,aln,m,lkl)
-  def updated(m:Model)=new MixtureLikelihoodCalc(tree,aln,m,lkl)
+  def updated(t:Tree)=new MixtureLikelihoodCalc(t,aln,m,Some(lklCalc.map{_.updated(t)}))
+  def updated(m:Model)=new MixtureLikelihoodCalc(tree,aln,m,Some(lklCalc.map{_.updated(m)}))
 
   def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
   def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }

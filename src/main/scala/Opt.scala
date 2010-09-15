@@ -151,9 +151,15 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
 
     import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}
     if (numArguments > 1){
+      var bestlnL = -1E100
+      var bestParam:Array[Double]=start
       val func = new MultivariateFunction{
         val lowerBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.lower(i)}}.flatten
         val upperBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.upper(i)}}.flatten
+        println("Lower bound " + lowerBound)
+        println("Upper bound " + upperBound)
+
+
         def getLowerBound(i:Int)=lowerBound(i)
         def getUpperBound(i:Int)=upperBound(i)
         val getNumArguments = numArguments
@@ -164,12 +170,21 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
             setOptParam(pName,values,Some(pIndex))
           }
           val ans = logLikelihood
+          if (ans > bestlnL){
+            bestParam = params
+            bestlnL = ans
+          }
           println(params.toList + " " + ans)
-          -ans
+          if (ans.isNaN){
+            1E100
+          }else {
+            -ans
+          }
         }
       }
       val search = new ConjugateDirectionSearch
       search.optimize(func,start,1E-4,1E-3)
+      println("Best " + bestParam.toList + " " + func.evaluate(bestParam))
     }else {
       val func = new UnivariateFunction{
         val param = optParams.head

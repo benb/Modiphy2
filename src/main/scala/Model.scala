@@ -316,6 +316,7 @@ trait CombiningMatrixModel{
 class StdSiteClassModel(val subModel:Seq[Model],val priors:IndexedSeq[Double],val modelIndex:Int=0,var cachedMat:Option[IndexedSeq[IndexedSeq[Double]]],var cachedExp:Option[Exp],override val rate:Double=1.0) extends AbstractSiteClassModel{
   override val numClasses = subModel.foldLeft(0){_+_.numClasses}
   override lazy val models = {
+    println("rate " + rate + " rateCorrection " + rateCorrection)
     subModel.map{r=>r.scale(rateCorrection)}
   }
  
@@ -383,6 +384,7 @@ class InvarLikelihoodModel(piValues:IndexedSeq[Double],override val subModelInde
     val mI = paramIndex getOrElse subModelIndex
     (p,mI) match {
       case (Pi,`subModelIndex`) => new InvarLikelihoodModel(vec,subModelIndex) 
+      case _ => this
     }
   }
   def updatedMat(p:ParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
@@ -399,6 +401,7 @@ class InvarLikelihoodModel(piValues:IndexedSeq[Double],override val subModelInde
     val mI = modelIndex.getOrElse(subModelIndex)
     (p,mI) match {
       case (Pi,`subModelIndex`)=> new InvarLikelihoodModel(Pi.getReal(vec),subModelIndex)
+      case _ => this
     }
   }
 

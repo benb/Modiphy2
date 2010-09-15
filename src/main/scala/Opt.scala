@@ -25,8 +25,8 @@ trait PiParamName extends ParamName{
     ans.result
   }
   def getOpt(d:IndexedSeq[Double])={
-    val logOne=math.log(d.head)
-    d.tail.map{i=>math.log(i)/logOne}
+    val head=d.head
+    d.tail.map{i=>math.log(i/head)}
   }
   def lower(i:Int)= -10.0
   def upper(i:Int)=10.0

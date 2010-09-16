@@ -41,31 +41,6 @@ trait Model{
   def add(m:Model,prior:Double):Model
 }
 
-/*
-trait WrappedModel extends Model{
-  def m:Model
-  def wrap(m2:Model):WrappedModel
-  def paramMap=m.paramMap
-  override lazy val params=m.params
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):Model = wrap(m.updatedVec(p,vec,paramIndex))
-  def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]) = wrap(m.updatedMat(p,vec,paramIndex))
-  def getOptParam(p:ParamName,index:Option[Int]=None) = m.getOptParam(p,index)
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]) = wrap(setOptParam(p,vec,paramIndex))
-  def updatedRate(r:Double) = wrap(m.updatedRate(r))
-  def numClasses:Int = m.numClasses
-  def mats:Seq[Matrix] = m.mats
-  def pis:Seq[IndexedSeq[Double]] = m.pis
-  def pi:IndexedSeq[Double] = m.pi
-  def mat:Matrix = m.mat
-  override def pi(n:Node):IndexedSeq[Double]=m.pi(n)
-  val exp:Exp = m.exp
-  def priors:IndexedSeq[Double] = m.priors
-  override val rate=m.rate
-  override def apply(e:Edge)=m(e)
-  override def models:Seq[Model]=List(this)
-}*/
-
-
 trait SingleModel extends Model{
   val subModelIndex=0
   def pi(n:Node):IndexedSeq[Double]
@@ -107,6 +82,8 @@ trait StdMixtureModel extends Model{
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
   def add(model:Model,prior:Double):StdMixtureModel
 }
+
+
 trait Exp{
   def apply(bl:Double,rate:Double=1.0)=expInt(bl*rate)
   lazy val expInt:Memo[Double,LinearMatrix]=Memo[Double,LinearSeq[LinearSeq[Double]]]({bl=>
@@ -358,47 +335,6 @@ class StdSiteClassModel(val subModel:Seq[Model],val priors:IndexedSeq[Double],va
   }
 }
 
-/*
-  Uses an explicit zeroed rate matrix for inclusion in a THMM/Covarion model
-*/
-class InvarLikelihoodModel(piValues:IndexedSeq[Double],override val subModelIndex:Int=0) extends StdModel{
-  lazy val params = List((Pi,subModelIndex))
-  lazy val mat = EnhancedIndexedMatrix.zero(piValues.length)
-  override val rate=0.0
-  lazy val exp = new Exp{
-    val intExp = EnhancedLinearMatrix.eye(piValues.length)
-    def exp(bl:Double)={
-      intExp
-    }  
-  }
-  def pi = piValues
-  def updatedRate(r:Double)={this}
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    val mI = paramIndex getOrElse subModelIndex
-    (p,mI) match {
-      case (Pi,`subModelIndex`) => new InvarLikelihoodModel(vec,subModelIndex) 
-      case _ => this
-    }
-  }
-  def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
-    this
-  }
-  def getOptParam(p:ParamName,modelIndex:Option[Int])={
-    val mI = modelIndex.getOrElse(subModelIndex)
-    (p,mI) match {
-      case (Pi,`subModelIndex`)=> Some(Pi.getOpt(piValues))
-      case (_,_) => None
-    }
-  }
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],modelIndex:Option[Int])={
-    val mI = modelIndex.getOrElse(subModelIndex)
-    (p,mI) match {
-      case (Pi,`subModelIndex`)=> new InvarLikelihoodModel(Pi.getReal(vec),subModelIndex)
-      case _ => this
-    }
-  }
-
-}
 
 object BasicLikelihoodModel{
   def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]]):BasicLikelihoodModel={
@@ -416,34 +352,7 @@ object BasicLikelihoodModel{
   val cleanParams=Set[ParamName](Pi,S)
 }
 
-trait UsefulModel extends StdModel{
-  override def toString:String={
-    "---\n"
-    super.toString + ":\n" + 
-    parameters.map{t=>
-      t._1 + " " + t._1.getReal(t._2) + "\n"
-    } + 
-    "---\n"
-  }
-  def cleanParams:Set[ParamName]
-  def parameters:Parameters
-  def modelIndex:Int
-  def factory(parameters:Parameters,cache:CalcCache):UsefulModel
-  var cache:CalcCache
-  def update(newParameters:(ParamName,IndexedSeq[Double])*)={
-    val unClean = newParameters.foldLeft(false){(bool,t)=>
-      bool || cleanParams.contains(t._1)
-    } || true //FIXME
-    val newP = newParameters.foldLeft(parameters){(m,t)=>m updated (t._1,t._2)}
-    if (! unClean){
-      factory(newP,cache)
-    }else {
-      factory(newP,Map[Symbol,Any]())
-    }
-  }
-
-  lazy val params = parameters.keys.map{(_,modelIndex)}.toList
-
+trait UsefulModelUtil extends StdModel{
   def getCache[A](s:Symbol,calc:()=>A):A={
     cache.getOrElse(s,{
         val ans = calc()
@@ -454,8 +363,14 @@ trait UsefulModel extends StdModel{
         case _ => error("Cache bug!")
     }
   }
-  def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
+
+  def cleanParams:Set[ParamName]
+  def parameters:Parameters
+  def modelIndex:Int
+  var cache:CalcCache
   override def apply(e:Edge)=exp(e.dist)
+  
+ def update(newParameters:(ParamName,IndexedSeq[Double])*):UsefulModelUtil
 
   def updatedDouble(p:SingleParamName,vec:Double,paramIndex:Option[Int])={
     if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
@@ -477,6 +392,99 @@ trait UsefulModel extends StdModel{
       update((p,p.getOpt(vec)))
     }else {this}
   }
+
+}
+trait UsefulMixtureModel extends UsefulModelUtil{
+
+ lazy val rateCorrection = rate / (subModels.zip(priors).map{t=>t._1.rate * t._2}.reduceLeft{_+_})
+ def subModels:Seq[UsefulModelUtil]
+ override lazy val models=subModels.map{_.scale(rateCorrection)}
+
+ def factory(parameters:Parameters,subModel:Seq[Model],cache:CalcCache):UsefulMixtureModel
+ override def update(newParameters:(ParamName,IndexedSeq[Double])*):UsefulMixtureModel={
+    val newModels = subModels.map{_.update(newParameters:_*)}
+    val changedModels = newModels.zip(subModels).foldLeft(false){(bool,t)=> bool || !(t._1 eq t._2)} // check for reference equality
+
+    val unClean = changedModels || newParameters.foldLeft(false){(bool,t)=>
+      bool || cleanParams.contains(t._1)
+    } || true //FIXME
+    val newP = newParameters.foldLeft(parameters){(m,t)=>
+      if(m contains t._1){
+        m updated (t._1,t._2)
+      }else {
+        m
+      }
+    }
+    if (!(changedModels) && (newParameters==parameters)){
+      this
+    }else if (!unClean){
+      factory(newP,newModels,cache)
+    }else {
+      factory(newP,newModels,Map[Symbol,Any]())
+    }
+  }
+
+  override def toString:String={
+    "---\n"
+    super.toString + ":\n" + 
+    parameters.map{t=>
+      t._1 + " " + t._1.getReal(t._2) + "\n" 
+    } + "SubModels (\n" + subModels.map{_.toString.lines.map{x=> "  " + x}.mkString("\n")}.mkString("\n") + "\n)"
+    "---\n"
+  }
+ 
+  
+  lazy val myParams = parameters.keys.map{(_,modelIndex)}.toList
+  lazy val params = myParams ++ subModels.map{_.params}.flatten.distinct
+
+  def getOptParam(p:ParamName,paramIndex:Option[Int])={
+    if ((paramIndex.isEmpty || paramIndex.get == modelIndex) && parameters.contains(p)){
+      Some(parameters(p))
+    }else {
+      models.foldLeft[Option[IndexedSeq[Double]]](None){(ans,mod)=>
+        if (ans.isEmpty){
+          mod.getOptParam(p,paramIndex)
+        }else {
+          ans
+        }
+      }
+    }
+  }
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
+      update((p,vec))
+    }else {this}
+  }
+
+  def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
+
+}
+trait UsefulModel extends UsefulModelUtil{
+ override def update(newParameters:(ParamName,IndexedSeq[Double])*):UsefulModel={
+    val unClean = newParameters.foldLeft(false){(bool,t)=>
+      bool || cleanParams.contains(t._1)
+    } || true //FIXME
+    val newP = newParameters.foldLeft(parameters){(m,t)=>m updated (t._1,t._2)}
+    if (! unClean){
+      factory(newP,cache)
+    }else {
+      factory(newP,Map[Symbol,Any]())
+    }
+  }
+  override def toString:String={
+    "---\n"
+    super.toString + ":\n" + 
+    parameters.map{t=>
+      t._1 + " " + t._1.getReal(t._2) + "\n"
+    } + 
+    "---\n"
+  }
+  def factory(parameters:Parameters,cache:CalcCache):UsefulModel
+ 
+  lazy val params = parameters.keys.map{(_,modelIndex)}.toList
+
+  def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
+
   def getOptParam(p:ParamName,paramIndex:Option[Int])={
     if ((paramIndex.isEmpty || paramIndex.get == modelIndex) && parameters.contains(p)){
       Some(parameters(p))
@@ -490,11 +498,10 @@ trait UsefulModel extends StdModel{
 
 }
 
-class BasicLikelihoodModel(val parameters:Parameters,var cache:CalcCache,val modelIndex:Int) extends UsefulModel{
-  def factory(parameters:Parameters,cache:CalcCache)=new BasicLikelihoodModel(parameters,cache,modelIndex)
-  def this(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]], rate:Double, exp:Exp,subModelIndex:Int=0) ={
-    this(Map(Pi->Pi.getOpt(piValues),S->S.getOpt(s),Rate->Rate.getOpt(rate)),Map[Symbol,Any](),{
-        subModelIndex})
+class BasicLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cache:CalcCache=Map[Symbol,Any]()) extends UsefulModel{
+  def factory(parameters:Parameters,cache:CalcCache)=new BasicLikelihoodModel(parameters,modelIndex,cache)
+  def this(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]], rate:Double, exp:Exp,subModelIndex:Int) ={
+    this(Map(Pi->Pi.getOpt(piValues),S->S.getOpt(s),Rate->Rate.getOpt(rate)),subModelIndex)
   }
   val cleanParams = BasicLikelihoodModel.cleanParams 
 
@@ -505,6 +512,28 @@ class BasicLikelihoodModel(val parameters:Parameters,var cache:CalcCache,val mod
   override val rate = parameters(Rate)(0)
 
 }
+/*
+  Uses an explicit zeroed rate matrix for inclusion in a THMM/Covarion model
+*/
+class InvarLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cache:CalcCache=Map[Symbol,Any]()) extends UsefulModel{
+  def this (piValues:IndexedSeq[Double],modelIndex:Int) = this(Map(Pi->Pi.getOpt(piValues)),modelIndex,Map[Symbol,Any]())
+  def factory(p:Parameters,cache:CalcCache)=new InvarLikelihoodModel(p,modelIndex,cache)
+  val cleanParams = Set[ParamName]()
+  lazy val pi = Pi.getReal(parameters(Pi))
+  lazy val mat = getCache[Matrix]('Q, {() => EnhancedIndexedMatrix.zero(pi.length)})
+  override val rate = 0.0
+  lazy val exp = getCache[Exp]('Exp,{ () => 
+    new Exp{
+      val intExp = EnhancedLinearMatrix.eye(parameters(Pi).length + 1)
+      def exp(bl:Double)={
+        intExp
+      }  
+    }}
+  )
+}
+
+
+
 
 object GammaModel{
   def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,rate:Double=1.0):GammaModel={

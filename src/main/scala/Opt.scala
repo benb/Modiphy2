@@ -7,11 +7,11 @@ trait ParamName{
   def apply(i:Int)=(this,i)
   def lower(i:Int):Double
   def upper(i:Int):Double 
+  def getReal(v:IndexedSeq[Double]):Any
 }
 case class VectorParamWrapper(s:SingleParamName) extends VectorParamName{
   def lower(i:Int)=s.lower(i)
   def upper(i:Int)=s.upper(i)
-
 }
 trait SingleParamName extends ParamName{
   def getOpt(v:Double)=Vector(v)
@@ -179,8 +179,6 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
       val func = new MultivariateFunction{
         val lowerBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.lower(i)}}.flatten
         val upperBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.upper(i)}}.flatten
-        println("Lower bound " + lowerBound)
-        println("Upper bound " + upperBound)
 
 
         def getLowerBound(i:Int)=lowerBound(i)
@@ -197,7 +195,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
             bestParam = params
             bestlnL = ans
           }
-          println(params.toList + " " + ans)
+          println("OPT " + optParams + " " + params.toList + " " + ans)
           if (ans.isNaN){
             1E100
           }else {

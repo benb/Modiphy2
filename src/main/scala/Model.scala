@@ -17,8 +17,7 @@ object Types{
 import Types._
 
 trait Model{
-  def paramMap:Map[(ParamName,Int),Any]
-  lazy val params=paramMap.keys.toList
+  def params:List[(ParamName,Int)]
   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):Model
   def updatedSingle(p:SingleParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
     updatedVec(VectorParamWrapper(p),vec,paramIndex)
@@ -100,7 +99,7 @@ trait StdMixtureModel extends Model{
   val rateCorrection = 1.0
   def pis = models.map{_.pis}.flatten
   def priors:IndexedSeq[Double]
-  lazy val paramMap = models.map{_.paramMap}.foldLeft(mixtureParams){_++_}
+  lazy val paramMap = models.map{_.params}.flatten.distinct.toList ++ mixtureParams.keys
   def mixtureParams=Map[(ParamName,Int),Any]()
   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
   def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdMixtureModel
@@ -216,7 +215,7 @@ object StdSiteClassModel{
 
 class ThmmSiteClassModel(realSwitchingModel:StdSiteClassModel,sigma:Double,alphabet:Alphabet,var bigMat:Option[IndexedSeq[IndexedSeq[Double]]],var myExp:Option[Exp]) extends StdModel{
   override def numClasses = realSwitchingModel.numClasses
-  override lazy val paramMap=realSwitchingModel.paramMap.updated((Sigma,modelIndex),sigma)
+  override lazy val params= (Sigma,modelIndex) :: realSwitchingModel.params 
   def modelIndex=realSwitchingModel.modelIndex
   lazy val mat = {
     bigMat getOrElse{
@@ -306,14 +305,15 @@ trait CombiningMatrixModel{
   }
 }
 class StdSiteClassModel(val subModel:Seq[Model],val priors:IndexedSeq[Double],val modelIndex:Int=0,var cachedMat:Option[IndexedSeq[IndexedSeq[Double]]],var cachedExp:Option[Exp],override val rate:Double=1.0) extends AbstractSiteClassModel{
+  val params = (MixturePrior,modelIndex)::subModel.map{_.params}.flatten.distinct.toList
   override val numClasses = subModel.foldLeft(0){_+_.numClasses}
   override lazy val models = {
-    println("rate " + rate + " rateCorrection " + rateCorrection)
+    //println("rate " + rate + " rateCorrection " + rateCorrection)
     subModel.map{r=>r.scale(rateCorrection)}
   }
- 
-  override lazy val paramMap = subModel.map{_.paramMap}.reduceLeft{_++_}.updated((MixturePrior,modelIndex),priors)
 
+  override def toString = "Mixture Model (Priors:" + priors + ") (\n" + models.map{_.toString.lines.map{x=> "  " + x}.mkString("\n")}.mkString("\n") + "\n)"
+ 
   override val rateCorrection = rate / (subModel.zip(priors).map{t=>t._1.rate * t._2}.reduceLeft{_+_})
   
   def updatedRate(r:Double):StdSiteClassModel=new StdSiteClassModel(subModel,priors,modelIndex,cachedMat,cachedExp,r)
@@ -362,6 +362,7 @@ class StdSiteClassModel(val subModel:Seq[Model],val priors:IndexedSeq[Double],va
   Uses an explicit zeroed rate matrix for inclusion in a THMM/Covarion model
 */
 class InvarLikelihoodModel(piValues:IndexedSeq[Double],override val subModelIndex:Int=0) extends StdModel{
+  lazy val params = List((Pi,subModelIndex))
   lazy val mat = EnhancedIndexedMatrix.zero(piValues.length)
   override val rate=0.0
   lazy val exp = new Exp{
@@ -414,27 +415,34 @@ object BasicLikelihoodModel{
   }
   val cleanParams=Set[ParamName](Pi,S)
 }
-class BasicLikelihoodModel(parameters:Parameters,var cache:CalcCache,val modelIndex:Int) extends StdModel{
-  import BasicLikelihoodModel._
-  def this(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]], rate:Double, exp:Exp,subModelIndex:Int=0) ={
-    this(Map(Pi->Pi.getOpt(piValues),S->S.getOpt(s),Rate->Rate.getOpt(rate)),Map[Symbol,Any](),{
-    println("Pi going In " + piValues)
-    println("S going In " + s)
-        subModelIndex})
+
+trait UsefulModel extends StdModel{
+  override def toString:String={
+    "---\n"
+    super.toString + ":\n" + 
+    parameters.map{t=>
+      t._1 + " " + t._1.getReal(t._2) + "\n"
+    } + 
+    "---\n"
   }
-
-
+  def cleanParams:Set[ParamName]
+  def parameters:Parameters
+  def modelIndex:Int
+  def factory(parameters:Parameters,cache:CalcCache):UsefulModel
+  var cache:CalcCache
   def update(newParameters:(ParamName,IndexedSeq[Double])*)={
     val unClean = newParameters.foldLeft(false){(bool,t)=>
       bool || cleanParams.contains(t._1)
     } || true //FIXME
     val newP = newParameters.foldLeft(parameters){(m,t)=>m updated (t._1,t._2)}
     if (! unClean){
-      new BasicLikelihoodModel(newP,cache,subModelIndex)
+      factory(newP,cache)
     }else {
-      new BasicLikelihoodModel(newP,Map[Symbol,Any](),subModelIndex)
+      factory(newP,Map[Symbol,Any]())
     }
   }
+
+  lazy val params = parameters.keys.map{(_,modelIndex)}.toList
 
   def getCache[A](s:Symbol,calc:()=>A):A={
     cache.getOrElse(s,{
@@ -446,29 +454,26 @@ class BasicLikelihoodModel(parameters:Parameters,var cache:CalcCache,val modelIn
         case _ => error("Cache bug!")
     }
   }
-
-  lazy val pi = Pi.getReal(parameters(Pi))
-  lazy val s = S.getReal(parameters(S))
-  lazy val mat = getCache[Matrix]('Q, {() => val ans = s.sToQ(pi,rate);println(ans.prettyString); ans}) 
-  lazy val exp = getCache[Exp]('Exp, {() => DefaultExpFactory(mat)}) 
-  override val rate = parameters(Rate)(0)
-  println("My Rate " + rate)
-
   def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
   override def apply(e:Edge)=exp(e.dist)
 
   def updatedDouble(p:SingleParamName,vec:Double,paramIndex:Option[Int])={
-    if (paramIndex.isEmpty || paramIndex.get == modelIndex){
+    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
+      println("Updating " + p + " " + paramIndex)
       update((p,p.getOpt(vec)))
     }else {this}
   }
   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    if (paramIndex.isEmpty || paramIndex.get == modelIndex){
-      update((p,p.getOpt(vec)))
+    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
+      println("Updating " + p + " " + paramIndex)
+      p match {
+        case VectorParamWrapper(p2) => updatedDouble(p2,vec(0),paramIndex)
+        case x=> update((p,p.getOpt(vec)))
+      }
     }else {this}
   }
   def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
-    if (paramIndex.isEmpty || paramIndex.get == modelIndex){
+    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
       update((p,p.getOpt(vec)))
     }else {this}
   }
@@ -478,10 +483,27 @@ class BasicLikelihoodModel(parameters:Parameters,var cache:CalcCache,val modelIn
     }else {None}
   }
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    if (paramIndex.isEmpty || paramIndex.get == modelIndex){
+    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
       update((p,vec))
     }else {this}
   }
+
+}
+
+class BasicLikelihoodModel(val parameters:Parameters,var cache:CalcCache,val modelIndex:Int) extends UsefulModel{
+  def factory(parameters:Parameters,cache:CalcCache)=new BasicLikelihoodModel(parameters,cache,modelIndex)
+  def this(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]], rate:Double, exp:Exp,subModelIndex:Int=0) ={
+    this(Map(Pi->Pi.getOpt(piValues),S->S.getOpt(s),Rate->Rate.getOpt(rate)),Map[Symbol,Any](),{
+        subModelIndex})
+  }
+  val cleanParams = BasicLikelihoodModel.cleanParams 
+
+  lazy val pi = Pi.getReal(parameters(Pi))
+  lazy val s = S.getReal(parameters(S))
+  lazy val mat = getCache[Matrix]('Q, {() => val ans = s.sToQ(pi,rate); ans}) 
+  lazy val exp = getCache[Exp]('Exp, {() => DefaultExpFactory(mat)}) 
+  override val rate = parameters(Rate)(0)
+
 }
 
 object GammaModel{
@@ -500,12 +522,13 @@ object GammaModel{
 }
 class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,modelIndex:Int,override val models:Seq[Model],var cachedMat:Option[Matrix]=None,var cachedExp:Option[Exp]=None,override val rate:Double=1.0) extends Model with CombiningMatrixModel{
 
+  val params = Pi::S::Gamma::Nil map {(_,modelIndex)}
+
   val priors = Vector.fill(numCat)(1.0/numCat)
   lazy val pi = { models.map{_.pi}.zip(priors).map{t=> t._1.map{_*t._2}}.flatten.toIndexedSeq }
   def pis = models.map{_.pi}
   def mats = models.map{_.mat}
   def updatedRate(rate:Double)=GammaModel(piValues,s,alpha,numCat,modelIndex,models.head,rate) //TODO optimise this
-  def paramMap = models.head.paramMap.updated((Gamma,modelIndex),alpha)
 
   lazy val numClasses = models.length
 
@@ -524,11 +547,9 @@ class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],al
 
   //stub methods FIXME
   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]) = {
-    println("UPDATE Got " + p + " " + vec + " " + paramIndex)
     val mI = paramIndex.getOrElse(modelIndex)
     (p,mI) match {
       case (VectorParamWrapper(Gamma),`modelIndex`)=>{
-        println("UPDATE Got it!")
         GammaModel(piValues,s,vec(0),numCat,modelIndex,models.head,rate)
       }
       case (Pi,`modelIndex`)=>{
@@ -560,7 +581,6 @@ class GammaModel(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],al
       case (Pi,`modelIndex`)=> updatedVec(Pi,Pi.getReal(vec),paramIndex)
       case (S,`modelIndex`)=> updatedMat(S,S.getReal(vec),paramIndex)
       case (Gamma,`modelIndex`) => {
-        println("UPDATE " + Gamma + " " + vec)
         updatedVec(Gamma,vec,paramIndex)
       }
       case _ => this

@@ -384,7 +384,6 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
       calc.join
     }else {
       lklCalc.zip(priors).map{t=> 
-      println("Sub lkl " + t._1.likelihoods)
         t._1.likelihoods.map{_ * t._2}
       }.map{_.iterator}
     }

@@ -16,14 +16,17 @@ case class VectorParamWrapper(s:SingleParamName) extends VectorParamName{
 trait SingleParamName extends ParamName{
   def getOpt(v:Double)=Vector(v)
   def getReal(v:IndexedSeq[Double])=v(0)
+  def <<(v:Double)=(this,getOpt(v))
 }
 trait VectorParamName extends ParamName{
   def getOpt(v:IndexedSeq[Double])=v
   def getReal(v:IndexedSeq[Double])=v
+  def <<(v:IndexedSeq[Double])=(this,getOpt(v))
 }
 trait MatrixParamName extends ParamName{
   def getOpt(v:IndexedSeq[IndexedSeq[Double]]):IndexedSeq[Double]
   def getReal(v:IndexedSeq[Double]):IndexedSeq[IndexedSeq[Double]]
+  def <<(v:IndexedSeq[IndexedSeq[Double]])=(this,getOpt(v))
 }
 
 case object Pi extends PiParamName
@@ -94,7 +97,7 @@ case object Gamma extends SingleParamName{
 
 class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
   def m = calc.model
-  val myParams:List[(ParamName,Int)] = m.params ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}
+  val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 
   def update(p:ParamName,d:Double){update(p,d,None)}
   def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,None)}
@@ -106,7 +109,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           case None => cantHandle(p,d,paramIndex)
           case Some(i) => tree = tree.setBranchLength(i,d);updatedTree()
         }
-      case s:SingleParamName => calc=calc.updatedVec(VectorParamWrapper(s),Vector(d),paramIndex) //FIXME
+      case s:SingleParamName => calc = calc.updatedSingle(s,d,paramIndex)
     }
   }
 
@@ -118,7 +121,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           case Some(i) => update(p,value(0),paramIndex)
         }
       case v:VectorParamName => calc = calc.updatedVec(v,value,paramIndex)
-      case s:SingleParamName => calc = calc.updatedVec(VectorParamWrapper(s),value,paramIndex)
+      case s:SingleParamName => calc = calc.updatedSingle(s,value(0),paramIndex)
     }
   }
 

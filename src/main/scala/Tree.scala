@@ -405,7 +405,11 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
     new MixtureLikelihoodCalc(tree,aln,m,Some(newLkl))
   }
 
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
+  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ 
+    updated(m.updatedVec(p,vec,paramIndex))
+  }
+
+  def updatedSingle(p:SingleParamName,d:Double,paramIndex:Option[Int])={ updated(m.updatedSingle(p,d,paramIndex)) }
   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
   def model =m
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
@@ -425,6 +429,7 @@ trait LikelihoodCalc[A <: Model]{
    def logLikelihood:Double
    def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
+   def updatedSingle(p:SingleParamName,d:Double,paramIndex:Option[Int]):LikelihoodCalc[A]
    def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
    def model:A
    def likelihoods:LinearSeq[Double]
@@ -443,6 +448,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
 
    def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
+   def updatedSingle(p:SingleParamName,d:Double,paramIndex:Option[Int])={ updated(m.updatedSingle(p,d,paramIndex)) }
    def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
   def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]={
     val p = aln.patternList

@@ -85,7 +85,7 @@ class ModelSuite extends FunSuite {
     val aln = Fasta(alnStr).parseWith(AminoAcid)
     val zeroModel = BasicLikelihoodModel(WAG.pi,WAG.S,3.0,1)
    // val modelG = GammaModel(WAG.pi,WAG.S,0.5,4) add (zeroModel,0.99)
-    val modelG = zeroModel.updatedRate(3.0) add (zeroModel,0.5) updatedRate 3.0
+    val modelG = zeroModel.updatedRate(3.0) add (zeroModel,0.5,1) updatedRate 3.0
     println("Fail " + modelG.rate)
     println("Fail " + zeroModel.rate)
   
@@ -115,8 +115,8 @@ class ModelSuite extends FunSuite {
     lkl2.logLikelihood should be (-5864.879865 plusOrMinus 0.01)
     opt2(MixturePrior)=Vector(0.8,0.2)
     opt1(MixturePrior)=Vector(0.8,0.2)
-    opt1.logLikelihood should be (-5824.746968 plusOrMinus 0.01)
     opt2.logLikelihood should be (-5824.746968 plusOrMinus 0.01)
+    opt1.logLikelihood should be (-5824.746968 plusOrMinus 0.01)
 
 //    lkl2.logLikelihood should be (-5864.879865 plusOrMinus 0.01) // phyml -d aa -o n -i png1-aln.phy -u png1.tre -a 0.5 -m WAG -v 0.2
 //  lkl.logLikelihood should be (-5864.879865 plusOrMinus 0.01) 
@@ -141,7 +141,7 @@ class ModelSuite extends FunSuite {
     val optModel = new OptModel(lkl,tree,aln)
     optModel.logLikelihood should be (-5810.399586 plusOrMinus 0.001)
   }
-
+/*
   test("THMM"){
     val tree = Tree(pfTree)
     val aln = Fasta(pfAln).parseWith(AminoAcid)
@@ -156,7 +156,7 @@ class ModelSuite extends FunSuite {
     optModel.logLikelihood should be (-2973.2188766283607 plusOrMinus 1e-2) // lnL from modiphy1
     //optModel.optimise((MixturePrior,Some(1)))
   }
-  
+  */
 }
 
 

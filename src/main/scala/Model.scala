@@ -86,75 +86,34 @@ object StdSiteClassModel{
   }
 }
 
-/*
-class ThmmSiteClassModel(realSwitchingModel:StdSiteClassModel,sigma:Double,alphabet:Alphabet,var bigMat:Option[IndexedSeq[IndexedSeq[Double]]],var myExp:Option[Exp]) extends StdModel{
-  override def numClasses = realSwitchingModel.numClasses
-  override lazy val params= (Sigma,modelIndex) :: realSwitchingModel.params 
-  def modelIndex=realSwitchingModel.modelIndex
-  lazy val mat = {
-    bigMat getOrElse{
-      val len = alphabet.matLength
+class ThmmSiteClassModel(val parameters:Parameters,val modelIndex:Int,realSwitchingModel:Model,len:Int,var cache:CalcCache=cleanCache) extends UsefulWrappedModel with UsefulSingleModel{
+  override val numClasses = realSwitchingModel.numClasses
+  lazy val mat = getCache[Matrix]('Q,{()=>
+      val sigma = parameters viewParam Sigma
       var ans = realSwitchingModel.mat
       for (i <- 0 until numClasses){
         for (j <- i+1 until numClasses){
           for (x <- 0 until len){
             val myI = i * len + x
             val myJ = j * len +x
-            ans = ans.updated(myI,ans(myI).updated(myJ,sigma * pi()(myJ)))
-            ans = ans.updated(myJ,ans(myJ).updated(myI,sigma * pi()(myI)))
+            ans = ans.updated(myI,ans(myI).updated(myJ,sigma * pi(myJ)))
+            ans = ans.updated(myJ,ans(myJ).updated(myI,sigma * pi(myI)))
           }
         }
       }
       ans = ans.fixDiag
-      bigMat=Some(ans)
       ans
-    }
+  })
+  def wrapped = List(realSwitchingModel)
+  def cleanParams = params
+  def pi = realSwitchingModel.pi
+  lazy val exp = getCache[Exp]('Q,{()=>DefaultExpFactory(mat)})
+  override def updatedRate(r:Double)={
+    factory(parameters.updatedParam(Rate,r),wrapped,cache) 
   }
-  def pi() = realSwitchingModel.pi
-  override def pi(n:Node) = realSwitchingModel.pi(n)
-  lazy val exp = myExp.getOrElse{val ans = DefaultExpFactory(mat); myExp = Some(ans); ans}
-  def mySigma(p:ParamName,paramIndex:Option[Int])={ (p==Sigma && (paramIndex.isEmpty || paramIndex.get==modelIndex)) }
-  def preserveCache(p:ParamName,paramIndex:Option[Int])={
-    (p,paramIndex) match {
-      case (Sigma,Some(modelIndex))=>true
-      case (Sigma,None)=>true
-      case _ => realSwitchingModel.preserveCache(p,paramIndex)
-    }
-  }
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    if (mySigma(p,paramIndex)){
-      new ThmmSiteClassModel(realSwitchingModel,vec(0),alphabet,bigMat,myExp)
-    }else {
-      val cache = if (preserveCache(p,paramIndex)){ (bigMat,myExp)}else {(None,None)}
-      new ThmmSiteClassModel(realSwitchingModel.updatedVec(p,vec,paramIndex),sigma,alphabet,cache._1,cache._2)
-    }
-  }
-  def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])= {
-      val cache = if (preserveCache(p,paramIndex)){ (bigMat,myExp)}else {(None,None)}
-      new ThmmSiteClassModel(realSwitchingModel.updatedMat(p,mat,paramIndex),sigma,alphabet,cache._1,cache._2)
-  }
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    p match {
-      case Sigma if (paramIndex.isEmpty || paramIndex.get==modelIndex) => new ThmmSiteClassModel(realSwitchingModel,vec(0),alphabet,None,None)
-      case any => {
-        val cache = if (preserveCache(p,paramIndex)){ (bigMat,myExp)}else {(None,None)}
-        new ThmmSiteClassModel(realSwitchingModel.setOptParam(p,vec,paramIndex),sigma,alphabet,cache._1,cache._2)
-      }
-    }
-  }
-  def getOptParam(p:ParamName,paramIndex:Option[Int])={
-     if (p==Sigma && (paramIndex.isEmpty || paramIndex.get==modelIndex)){
-       Some(Vector(sigma))
-     }else {
-       realSwitchingModel.getOptParam(p,paramIndex)
-     }
-   }
- 
-  def updatedRate(r:Double)={
-    new ThmmSiteClassModel(realSwitchingModel.updatedRate(r),sigma,alphabet,bigMat,myExp)
-  }
+  def factory(parameters:Parameters,realSwitchingModel:Seq[Model],cache:CalcCache)=new ThmmSiteClassModel(parameters,modelIndex,realSwitchingModel.head,len,cache)
 
-}*/
+}
 
 
 class StdSiteClassModel(val parameters:Parameters,val modelIndex:Int,val subModels:Seq[Model],var cache:CalcCache=cleanCache) extends UsefulMixtureModel{
@@ -263,37 +222,20 @@ trait UsefulModelUtil extends Model{
     }else {this}
   }
 
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
+    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
+      update((p,vec))
+    }else {this}
+  }
+
 }
-trait UsefulMixtureModel extends UsefulModelUtil{
 
-  
-  def add(model:Model,prior:Double,newModelIndex:Int = modelIndex)={
-    if (modelIndex==newModelIndex){
-      val newPriors = priors.map{_*(1.0-prior)} :+ prior
-      val newParam = parameters updatedParam (MixturePrior,newPriors)
-      factory(newParam,subModels :+ model,cleanCache)
-    }else {
-      val priors = Vector(1.0-prior,prior)
-      new StdSiteClassModel((MixturePrior << priors) :: (Rate << 1.0) :: Nil,newModelIndex,List(this,model))
-    }
-  }
-
-  def combineMatrices(mats:Seq[Matrix],pi:IndexedSeq[Double],rate:Double)={
-    mats.foldLeft[IndexedSeq[IndexedSeq[Double]]]( Vector[Vector[Double]]() ){(m,m2)=>m addClass m2}.normalise(pi,rate)
-  }
-  override lazy val numClasses = subModels.foldLeft(0){_+_.numClasses}
-  lazy val rateCorrection = rate / (subModels.zip(priors).map{t=>t._1.rate * t._2}.reduceLeft{_+_})
-  def subModels:Seq[Model]
-  override lazy val models=subModels.map{
-    _.scale(rateCorrection)
-  }
-  def pis = models.map{_.pi}
-  def mats = models.map{_.mat}
-
-  def factory(parameters:Parameters,subModel:Seq[Model],cache:CalcCache):UsefulMixtureModel
-  override def update(newParameters:(ParamName,IndexedSeq[Double])*):UsefulMixtureModel={
-    val newModels = subModels.map{_.update(newParameters:_*)}
-    val changedModels = newModels.zip(subModels).foldLeft(false){(bool,t)=> bool || !(t._1 eq t._2)} // check for reference equality
+trait UsefulWrappedModel extends UsefulModelUtil{
+  def wrapped:Seq[Model]
+  def factory(parameters:Parameters,models:Seq[Model],cache:CalcCache):UsefulWrappedModel
+  override def update(newParameters:(ParamName,IndexedSeq[Double])*):UsefulWrappedModel={
+    val newModels = wrapped.map{_.update(newParameters:_*)}
+    val changedModels = newModels.zip(wrapped).foldLeft(false){(bool,t)=> bool || !(t._1 eq t._2)} // check for reference equality
 
     val unClean = changedModels || newParameters.foldLeft(false){(bool,t)=>
       bool || cleanParams.contains(t._1)
@@ -314,18 +256,12 @@ trait UsefulMixtureModel extends UsefulModelUtil{
     }
   }
 
-  override def toString:String={
-    "---\n"
-    super.toString + ":\n" + 
-    parameters.map{t=>
-      t._1 + " " + t._1.getReal(t._2) + "\n" 
-    } + "SubModels (\n" + subModels.map{_.toString.lines.map{x=> "  " + x}.mkString("\n")}.mkString("\n") + "\n)"
-    "---\n"
+  override lazy val params = wrapped.map{_.params}.foldLeft(super.params){(m,sub)=>m ++ sub}
+  def add(model:Model,prior:Double,newModelIndex:Int = modelIndex):Model={
+    val priors = Vector(1.0-prior,prior)
+    new StdSiteClassModel((MixturePrior << priors) :: (Rate << 1.0) :: Nil,newModelIndex,List(this,model))
   }
- 
   
-  override lazy val params = subModels.map{_.params}.foldLeft(super.params){(m,sub)=>m ++ sub}
-
   def getOptParam(p:ParamName,paramIndex:Option[Int])={
     if ((paramIndex.isEmpty || paramIndex.get == modelIndex) && parameters.contains(p)){
       Some(parameters(p))
@@ -339,28 +275,65 @@ trait UsefulMixtureModel extends UsefulModelUtil{
       }
     }
   }
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
-      update((p,vec))
-    }else {this}
-  }
 
-  def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
 
 }
-trait UsefulModel extends UsefulModelUtil{
+
+
+trait UsefulMixtureModel extends UsefulWrappedModel{
+
+  override def add(model:Model,prior:Double,newModelIndex:Int = modelIndex)={
+    if (modelIndex==newModelIndex){
+      val newPriors = priors.map{_*(1.0-prior)} :+ prior
+      val newParam = parameters updatedParam (MixturePrior,newPriors)
+      factory(newParam,subModels :+ model,cleanCache)
+    }else {
+      super.add(model,prior,newModelIndex)
+    }
+  }
+
+  def combineMatrices(mats:Seq[Matrix],pi:IndexedSeq[Double],rate:Double)={
+    mats.foldLeft[IndexedSeq[IndexedSeq[Double]]]( Vector[Vector[Double]]() ){(m,m2)=>m addClass m2}.normalise(pi,rate)
+  }
+  override lazy val numClasses = subModels.foldLeft(0){_+_.numClasses}
+  lazy val rateCorrection = rate / (subModels.zip(priors).map{t=>t._1.rate * t._2}.reduceLeft{_+_})
+  def subModels:Seq[Model]
+  def wrapped = subModels
+  override lazy val models=subModels.map{
+    _.scale(rateCorrection)
+  }
+  def pis = models.map{_.pi}
+  def mats = models.map{_.mat}
+
+  def factory(parameters:Parameters,subModel:Seq[Model],cache:CalcCache):UsefulMixtureModel
+  override def toString:String={
+    "---\n"
+    super.toString + ":\n" + 
+    parameters.map{t=>
+      t._1 + " " + t._1.getReal(t._2) + "\n" 
+    } + "SubModels (\n" + subModels.map{_.toString.lines.map{x=> "  " + x}.mkString("\n")}.mkString("\n") + "\n)"
+    "---\n"
+  }
+ 
+  
+
+    def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
+
+}
+trait UsefulSingleModel extends UsefulModelUtil{
+ def priors = Vector(1.0)
+ def pis = List(pi)
+ def numClasses =1
+ def mats = List(mat)
+}
+trait UsefulModel extends UsefulSingleModel{
  def add(m:Model,prior:Double,addedIndex:Int) = {
    val priors = Vector(1.0-prior,prior)
    new StdSiteClassModel((MixturePrior << priors)::(Rate << 1.0)::Nil,addedIndex,List(this,m))
  }
 
  
- def priors = Vector(1.0)
- def pis = List(pi)
- def numClasses =1
- def mats = List(mat)
-
- override def update(newParameters:(ParamName,IndexedSeq[Double])*):Model={
+  override def update(newParameters:(ParamName,IndexedSeq[Double])*):Model={
     val special = newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
       if (optM.isEmpty){None}else {specialUpdate(p)}     
     }
@@ -403,11 +376,6 @@ trait UsefulModel extends UsefulModelUtil{
     if ((paramIndex.isEmpty || paramIndex.get == modelIndex) && parameters.contains(p)){
       Some(parameters(p))
     }else {None}
-  }
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
-    if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
-      update((p,vec))
-    }else {this}
   }
 
 }

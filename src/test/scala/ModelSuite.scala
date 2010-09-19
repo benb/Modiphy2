@@ -7,6 +7,7 @@ import modiphy.math.constants._
 import modiphy.opt._
 import modiphy.math.EnhancedMatrix._
 import ModelData._
+import modiphy.model.Types._
 
 class ModelSuite extends FunSuite {
 
@@ -141,7 +142,6 @@ class ModelSuite extends FunSuite {
     val optModel = new OptModel(lkl,tree,aln)
     optModel.logLikelihood should be (-5810.399586 plusOrMinus 0.001)
   }
-/*
   test("THMM"){
     val tree = Tree(pfTree)
     val aln = Fasta(pfAln).parseWith(AminoAcid)
@@ -149,14 +149,13 @@ class ModelSuite extends FunSuite {
     println("PI " + pi)
     val zeroModel = BasicLikelihoodModel.zeroRate(pi,1)
     val gammaModel = GammaModel(pi,WAG.S,3.270690,4) add (zeroModel,0.066963)
-    val thmm = new ThmmSiteClassModel(gammaModel,2.415327,AminoAcid,None,None)
+    val thmm = new ThmmSiteClassModel((Sigma << 2.415327)::Nil, 1,gammaModel,AminoAcid.matLength )
     val lkl = new SimpleLikelihoodCalc(tree,thmm,aln)
     val optModel = new OptModel(lkl,tree,aln)
     println(thmm.params)
     optModel.logLikelihood should be (-2973.2188766283607 plusOrMinus 1e-2) // lnL from modiphy1
     //optModel.optimise((MixturePrior,Some(1)))
   }
-  */
 }
 
 

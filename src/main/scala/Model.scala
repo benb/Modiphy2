@@ -13,7 +13,6 @@ object Types{
   type Parameters = Map[ParamName,IndexedSeq[Double]]
   type CalcCache = Map[Symbol,Any]
   val cleanCache = Map[Symbol,Any]()
-  implicit def WrapSingle(p:SingleParamName)=VectorParamWrapper(p)
   implicit def WrapParam(p:Parameters)=new ParametersWrapper(p)
   implicit def MakeParamMap(l:List[(ParamName,IndexedSeq[Double])])=l.toMap
 }
@@ -52,27 +51,13 @@ trait Model{
   def update(newParameters:(ParamName,IndexedSeq[Double])*):Model
 }
 
-trait SingleModel extends Model{
+trait StdModel extends Model{
   val subModelIndex=0
-  def pi(n:Node):IndexedSeq[Double]
-  def apply(e:Edge):LinearMatrix
-}
-trait StdModel extends SingleModel{
-  def priors=Vector(1.0)
-  def pi:IndexedSeq[Double]
-  def mat:Matrix
-  def mats=List(mat)
-  def pis = List(pi)
-  lazy val paramMap=Map[(ParamName,Int),Any]((Pi,subModelIndex)->pi,(S,subModelIndex)->mat)
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdModel
-  def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdModel
-  def updatedRate(d:Double):StdModel
-  def getOptParam(p:ParamName,index:Option[Int]):Option[IndexedSeq[Double]]
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdModel
   def numClasses = 1
-  def add(m:Model,p:Double,modelIndex:Int)={
-    new StdSiteClassModel((MixturePrior << Vector(1.0-p,p))::Nil,modelIndex,List(this,m))// TODO FIX '3'!
-  }
+  def add(m:Model,p:Double,modelIndex:Int)={ new StdSiteClassModel((MixturePrior << Vector(1.0-p,p))::Nil,modelIndex,List(this,m)) }
+  def priors=Vector(1.0)
+  def mats=List(mat)
+  def pis =List(pi)
   /*
   def u:Matrix
   def d:Vector
@@ -80,30 +65,21 @@ trait StdModel extends SingleModel{
   */
 }
 trait StdMixtureModel extends Model{
-  override def models:Seq[Model]
-  def mats=models.map{_.mats}.flatten
-  val rateCorrection = 1.0
-  def pis = models.map{_.pis}.flatten
-  def priors:IndexedSeq[Double]
-  lazy val paramMap = models.map{_.params}.flatten.distinct.toList ++ mixtureParams.keys
-  def mixtureParams=Map[(ParamName,Int),Any]()
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
-  def updatedMat(p:MatrixParamName,vec:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):StdMixtureModel
-  def getOptParam(p:ParamName,index:Option[Int]):Option[IndexedSeq[Double]]
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):StdMixtureModel
-  def add(model:Model,prior:Double,modelIndex:Int):StdMixtureModel
+  def rateCorrection:Double
 }
 
 
 trait Exp{
+  def realExp = this
   def apply(bl:Double,rate:Double=1.0)=expInt(bl*rate)
   lazy val expInt:Memo[Double,LinearMatrix]=Memo[Double,LinearSeq[LinearSeq[Double]]]({bl=>
     exp(bl)
   })
   def exp(bl:Double):LinearSeq[LinearSeq[Double]]
   def rerate(newRate:Double):Exp = {
-    val outer = this
+    val outer = realExp
     new Exp{
+      override def realExp = outer
       def exp(bl:Double)=outer.exp(bl*newRate)
     }
   }
@@ -306,15 +282,17 @@ class GammaModel(val parameters:Parameters,val modelIndex:Int, var cache:CalcCac
       base.updatedSingle(Rate,subrate * rate,None)
     }
   })
-  lazy val base = {
+  lazy val base = getCache[Model]('Base,{()=>{
     new BasicLikelihoodModel(parameters.filter{t=> t._1==Pi || t._1==S || t._1==Rate}, modelIndex,cleanCache)
-  }
+  }})
   lazy val mat = getCache[Matrix]('Q,{()=> 
     
     combineMatrices(subModels.map{_.mat},pi,rate)})
   lazy val exp = getCache[Exp]('Exp,{()=>DefaultExpFactory(mat)})
   val cleanParams=params
   def factory(parameters:Parameters,subModels:Seq[Model],cache:CalcCache)=new GammaModel(parameters,modelIndex,cache,numClasses)//TODO optimise
+  
+
 }
 
 object BasicLikelihoodModel{
@@ -334,6 +312,7 @@ object BasicLikelihoodModel{
 }
 
 trait UsefulModelUtil extends Model{
+  def cached(s:Symbol)=cache contains s
   def getCache[A](s:Symbol,calc:()=>A):A={
     cache.getOrElse(s,{
         val ans = calc()
@@ -344,7 +323,9 @@ trait UsefulModelUtil extends Model{
         case _ => error("Cache bug!")
     }
   }
-
+  def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]] = {
+    case _ => None
+  }
   def params = parameters.keySet.toSet
   def numberedParams = params map {p => (p,modelIndex)}
 
@@ -365,7 +346,6 @@ trait UsefulModelUtil extends Model{
   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={
     if (params.contains(p) && (paramIndex.isEmpty || paramIndex.get == modelIndex)){
       p match {
-        case VectorParamWrapper(p2) => updatedSingle(p2,vec(0),paramIndex)
         case x=> update((p,p.getOpt(vec)))
       }
     }else {this}
@@ -467,19 +447,26 @@ trait UsefulModel extends UsefulModelUtil{
    new StdSiteClassModel((MixturePrior << priors)::(Rate << 1.0)::Nil,addedIndex,List(this,m))
  }
 
+ 
  def priors = Vector(1.0)
  def pis = List(pi)
  def numClasses =1
  def mats = List(mat)
- override def update(newParameters:(ParamName,IndexedSeq[Double])*):UsefulModel={
-    val unClean = newParameters.foldLeft(false){(bool,t)=>
-      bool || cleanParams.contains(t._1)
-    } || true //FIXME
-    val newP = newParameters.foldLeft(parameters){(m,t)=>m updated (t._1,t._2)}
-    if (! unClean){
-      factory(newP,cache)
-    }else {
-      factory(newP,cleanCache)
+
+ override def update(newParameters:(ParamName,IndexedSeq[Double])*):Model={
+    val special = newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
+      if (optM.isEmpty){None}else {specialUpdate(p)}     
+    }
+    special.getOrElse{
+      val unClean = newParameters.foldLeft(false){(bool,t)=>
+        bool || cleanParams.contains(t._1)
+      } || true //FIXME
+      val newP = newParameters.foldLeft(parameters){(m,t)=>m updated (t._1,t._2)}
+      if (! unClean){
+        factory(newP,cache)
+      }else {
+        factory(newP,cleanCache)
+      }
     }
   }
   override def toString:String={
@@ -492,9 +479,18 @@ trait UsefulModel extends UsefulModelUtil{
   }
   def factory(parameters:Parameters,cache:CalcCache):UsefulModel
  
-  
+ override def updatedRate(r:Double)={
+   exp.instantiated
+    val newCache = if(cached('Exp)){
+      println("Rescaled Exp")
+      Map[Symbol,Any]('Exp -> (exp))
+    }else {
+      cleanCache
+    }
+    factory(parameters.updated(Rate,Rate.getOpt(r)),newCache)
+ }
 
-  def updatedRate(r:Double)={update((Rate,Vector(r)))} //FIXME RESCALE EXP
+ 
 
   def getOptParam(p:ParamName,paramIndex:Option[Int])={
     if ((paramIndex.isEmpty || paramIndex.get == modelIndex) && parameters.contains(p)){

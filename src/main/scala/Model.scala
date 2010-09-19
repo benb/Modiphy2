@@ -26,6 +26,11 @@ class ParametersWrapper(par:Parameters){
   def updatedParam(p:MatrixParamName,m:IndexedSeq[IndexedSeq[Double]])=par.updated(p,p.getOpt(m))
 }
 
+/**
+ Base Model type. For flexibility all Models can be accessed as either a
+ "Mixture" model (as a series of rate matrices + probabilities) or a single
+ large rate matrix. 
+*/
 trait Model{
   def params:scala.collection.Set[ParamName]
   def numberedParams:scala.collection.Set[(ParamName,Int)]
@@ -108,11 +113,8 @@ class ThmmSiteClassModel(val parameters:Parameters,val modelIndex:Int,realSwitch
   def cleanParams = params
   def pi = realSwitchingModel.pi
   lazy val exp = getCache[Exp]('Q,{()=>DefaultExpFactory(mat)})
-  override def updatedRate(r:Double)={
-    factory(parameters.updatedParam(Rate,r),wrapped,cache) 
-  }
+  override def updatedRate(r:Double)=factory(parameters.updatedParam(Rate,r),wrapped,cache) 
   def factory(parameters:Parameters,realSwitchingModel:Seq[Model],cache:CalcCache)=new ThmmSiteClassModel(parameters,modelIndex,realSwitchingModel.head,len,cache)
-
 }
 
 
@@ -139,8 +141,6 @@ class GammaModel(val parameters:Parameters,val modelIndex:Int, var cache:CalcCac
     val priors = Vector(1.0-prior,prior)
     new StdSiteClassModel((MixturePrior << priors) :: (Rate << 1.0) :: Nil,newModelIndex,List(this,model))
   }
-
-
   lazy val subS = parameters viewParam S
   override lazy val subModels = getCache[Seq[Model]]('Models,{()=>
     base.exp.instantiated // hack to make sure Exp is constructed and so can be cheaply copied
@@ -157,8 +157,6 @@ class GammaModel(val parameters:Parameters,val modelIndex:Int, var cache:CalcCac
   lazy val exp = getCache[Exp]('Exp,{()=>DefaultExpFactory(mat)})
   val cleanParams=params
   def factory(parameters:Parameters,subModels:Seq[Model],cache:CalcCache)=new GammaModel(parameters,modelIndex,cache,numClasses)//TODO optimise
-  
-
 }
 
 object BasicLikelihoodModel{
@@ -227,7 +225,6 @@ trait UsefulModelUtil extends Model{
       update((p,vec))
     }else {this}
   }
-
 }
 
 trait UsefulWrappedModel extends UsefulModelUtil{

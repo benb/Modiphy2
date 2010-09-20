@@ -94,6 +94,24 @@ case object Gamma extends SingleParamName{
   }
 }
 
+sealed abstract class ParamMatcher{
+  def apply(i:Int):Boolean
+}
+sealed abstract class NumParamMatcher{
+  def params:Set[Int]
+}
+case class MatchP(i:Int) extends NumParamMatcher{
+  def apply(j:Int)=(i==j)
+  def params=Set(i)
+}
+case object MatchAll extends ParamMatcher{
+  def apply(j:Int)=true
+}
+case class MatchSet(s:Set[Int]) extends NumParamMatcher{
+  def apply(j:Int)=s contains j
+  def params = s
+}
+
 
 class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
   def m = calc.model

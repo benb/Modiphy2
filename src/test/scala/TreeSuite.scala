@@ -15,6 +15,8 @@ class TreeSuite extends FunSuite {
     val bl1 = tree branchLength 3
     val t2 = tree setBranchLength(3,bl1+1.3)
     t2.treeLength should equal (tree.treeLength+1.3)
+    val t3 = t2.setBranchLengths(Vector.fill(29){0.1})
+    t3.getBranchLengths.length should equal (tree.getBranchLengths.length)
     println(t2)
   }
   test("Edit"){

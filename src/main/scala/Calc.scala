@@ -35,18 +35,6 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
   def apply=new IndexedSeqLikelihoodCalc
 }
 
-/*
-class PatternMatchLikelihoodCalc(aln:Alignment,likelihood:Pattern=>Double) extends LikelihoodCalc[Model]{
-  lazy val likelihoods=aln.patternList.map{likelihood(_)}
-  def updated(t:Tree)=this
-  def updated(m:Model)=this
-  def updatedVec(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])=this
-  def updatedMat(p:ParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])=this
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])=this
-  def logLikelihood = likelihoods.zip(aln.countList).map{t=> math.log(t._1)*t._2}.reduceLeft{_+_}
-  def model = error("Unimplemented")
-}*/
-
 class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc[Model]]]=None) extends LikelihoodCalc[Model]{
   def priors = m.priors
   val models = m.models
@@ -90,14 +78,14 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
     new MixtureLikelihoodCalc(tree,aln,m,Some(newLkl))
   }
 
-  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ 
+  def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ 
     updated(m.updatedVec(p,vec,paramIndex))
   }
 
-  def updatedSingle(p:SingleParamName,d:Double,paramIndex:Option[Int])={ updated(m.updatedSingle(p,d,paramIndex)) }
-  def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
+  def updatedSingle(p:SingleParamName,d:Double,paramIndex:ParamMatcher)={ updated(m.updatedSingle(p,d,paramIndex)) }
+  def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher)={ updated(m.updatedMat(p,mat,paramIndex)) }
   def model =m
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.setOptParam(p,vec,paramIndex))}
 }
 
 /*
@@ -112,10 +100,10 @@ trait LikelihoodCalc[A <: Model]{
    def updated(t:Tree):LikelihoodCalc[A]
    def updated(m:A):LikelihoodCalc[A]
    def logLikelihood:Double
-   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
-   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]):LikelihoodCalc[A]
-   def updatedSingle(p:SingleParamName,d:Double,paramIndex:Option[Int]):LikelihoodCalc[A]
-   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int]):LikelihoodCalc[A]
+   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc[A]
+   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher):LikelihoodCalc[A]
+   def updatedSingle(p:SingleParamName,d:Double,paramIndex:ParamMatcher):LikelihoodCalc[A]
+   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc[A]
    def model:A
    def likelihoods:LinearSeq[Double]
 }
@@ -130,11 +118,11 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
 
   
   def model=m
-  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.setOptParam(p,vec,paramIndex))}
+  def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.setOptParam(p,vec,paramIndex))}
 
-   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:Option[Int])={ updated(m.updatedVec(p,vec,paramIndex)) }
-   def updatedSingle(p:SingleParamName,d:Double,paramIndex:Option[Int])={ updated(m.updatedSingle(p,d,paramIndex)) }
-   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int])={ updated(m.updatedMat(p,mat,paramIndex)) }
+   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.updatedVec(p,vec,paramIndex)) }
+   def updatedSingle(p:SingleParamName,d:Double,paramIndex:ParamMatcher)={ updated(m.updatedSingle(p,d,paramIndex)) }
+   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher)={ updated(m.updatedMat(p,mat,paramIndex)) }
   def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]={
     val p = aln.patternList
        (treePos,treePos.get) match {

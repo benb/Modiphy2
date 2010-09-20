@@ -249,21 +249,25 @@ class Tree(val edges:IndexedSeq[Edge],
     val e = oldEdge
     val newEdge = edges(i).copy(dist=d)
     val myNewEdgeMap = edgeMap.updated(e.left,newEdge::edgeMap(e.left).filter{_!=oldEdge}).updated(e.right,newEdge::edgeMap(e.right).filter{_!=oldEdge})
+    val nE = edges.updated(i,newEdge)
+    assert(nE.length==edges.length)
       val ans = copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
   //    println("New tree " + i + " " + d + " " + ans)
     ans
   }
   def setBranchLengths(vec:Seq[Double])={
     var myNewEdgeMap = edgeMap
+    if (vec.length < edges.length){error("Tree with " + edges.length + " edges but only " + vec.length + " lengths specified")}
     val edges2 = edges.zip(vec).map{ t=>val (e,d)=t
       if (e.dist!=d){
         val ans = e.copy(dist=d)
-        myNewEdgeMap = myNewEdgeMap.updated(e.left,ans::myNewEdgeMap(e.left).filter{_!=e}).updated(e.right,ans::edgeMap(e.right).filter{_!=e})
+        myNewEdgeMap = myNewEdgeMap.updated(e.left,ans::myNewEdgeMap(e.left).filter{_!=e}).updated(e.right,ans::myNewEdgeMap(e.right).filter{_!=e})
         ans
       }else {
         e
       }
     }
+    assert(edges2.length==edges.length)
     copy(newEdges=edges2,newEdgeMap = myNewEdgeMap)
   }
   lazy val getBranchLengths = edges.map{_.dist}

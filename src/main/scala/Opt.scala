@@ -97,18 +97,20 @@ case object Gamma extends SingleParamName{
 sealed abstract class ParamMatcher{
   def apply(i:Int):Boolean
 }
-sealed abstract class NumParamMatcher{
-  def params:Set[Int]
+sealed abstract class NumParamMatcher extends ParamMatcher{
+  def params:Seq[Int]
 }
 case class MatchP(i:Int) extends NumParamMatcher{
   def apply(j:Int)=(i==j)
-  def params=Set(i)
+  def params=List(i)
 }
 case object MatchAll extends ParamMatcher{
   def apply(j:Int)=true
 }
-case class MatchSet(s:Set[Int]) extends NumParamMatcher{
-  def apply(j:Int)=s contains j
+case class MatchSet(s:IndexedSeq[Int]) extends NumParamMatcher{
+  def apply(j:Int)={
+    s contains j
+  }
   def params = s
 }
 
@@ -117,50 +119,57 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
   def m = calc.model
   val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 
-  def update(p:ParamName,d:Double){update(p,d,None)}
-  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,None)}
-  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,None)}
-  def update(p:ParamName,d:Double,paramIndex:Option[Int]){
+
+  def update(p:ParamName,d:Double){update(p,d,MatchAll)}
+  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,MatchAll)}
+  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,MatchAll)}
+  def update(p:ParamName,d:Double,paramIndex:ParamMatcher){
     p match {
       case BranchLengths => 
         paramIndex match {
-          case None => cantHandle(p,d,paramIndex)
-          case Some(i) => tree = tree.setBranchLength(i,d);updatedTree()
+          case MatchAll => cantHandle(p,d,paramIndex)
+          case MatchP(i) => tree = tree.setBranchLength(i,d);updatedTree()
+          case MatchSet(s) => {tree = s.foldLeft(tree){(t,i)=>t.setBranchLength(i,d)};updatedTree()}
         }
       case s:SingleParamName => calc = calc.updatedSingle(s,d,paramIndex)
     }
   }
 
-  def update(p:ParamName,value:IndexedSeq[Double],paramIndex:Option[Int]){
+  def update(p:ParamName,value:IndexedSeq[Double],paramIndex:ParamMatcher){
     p match {
       case BranchLengths => 
         paramIndex match {
-          case None => tree = tree.setBranchLengths(value);updatedTree()
-          case Some(i) => update(p,value(0),paramIndex)
+          case MatchAll => tree = tree.setBranchLengths(value);updatedTree()
+          case MatchSet(i)=> tree = i.zip(value).foldLeft(tree){(t,iv)=> t.setBranchLength(iv._1,iv._2)};updatedTree()
+          case MatchP(i) => update(p,value(0),paramIndex)
         }
       case v:VectorParamName => calc = calc.updatedVec(v,value,paramIndex)
       case s:SingleParamName => calc = calc.updatedSingle(s,value(0),paramIndex)
     }
   }
 
-  def update(p:ParamName,value:IndexedSeq[IndexedSeq[Double]],paramIndex:Option[Int]=None)(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){
+  def update(p:ParamName,value:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher=MatchAll)(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){
     p match {
       case BranchLengths=> cantHandle(p,value,paramIndex)
       case m:MatrixParamName => calc = calc.updatedMat(m,value,paramIndex)
     }
   }
 
-  def setOptParam(p:ParamName,value:IndexedSeq[Double],paramIndex:Option[Int]){
+  def setOptParam(p:ParamName,value:IndexedSeq[Double],paramIndex:ParamMatcher){
     p match {
       case BranchLengths => update(BranchLengths,value,paramIndex)
       case _ => calc = calc.setOptParam(p,value,paramIndex)
     }
   }
 
-  def getOptParam(p:ParamName,paramIndex:Option[Int]=None)={
+  def getOptParam(p:ParamName,paramIndex:ParamMatcher=MatchAll)={
     (p,paramIndex) match {
-      case (BranchLengths,None) => Some(tree.getBranchLengths)
-      case (BranchLengths,Some(n)) => Some(Vector(tree.getBranchLengths(n)))
+      case (BranchLengths,MatchAll) => {
+        println("Getting branch lengths " + tree.getBranchLengths)
+        Some(tree.getBranchLengths)
+      }
+      case (BranchLengths,MatchP(i)) => Some(Vector(tree.getBranchLengths(i)))
+      case (BranchLengths,MatchSet(i)) => Some(i.map{j=>tree.getBranchLengths(j)})
       case _ => m.getOptParam(p,paramIndex)
     }
   }
@@ -170,33 +179,30 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
   def updatedTree(){
     calc = calc updated tree
   }
-  def cantHandle(p:ParamName,a:Any,paramIndex:Option[Int]){
+  def cantHandle(p:ParamName,a:Any,paramIndex:ParamMatcher){
     println("Can't handle combination " + p + " " + paramIndex + " " + a)
   }
 
-  def update(t:(ParamName,Int), value:Double){ update(t._1,value,Some(t._2))}
-  def update(t:(ParamName,Int), value:IndexedSeq[Double]){ update(t._1,value,Some(t._2))}
-  def update(t:(ParamName,Int), value:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){ update(t._1,value,Some(t._2))}
+  def update(t:(ParamName,Int), value:Double){ update(t._1,value,MatchP(t._2))}
+  def update(t:(ParamName,Int), value:IndexedSeq[Double]){ update(t._1,value,MatchP(t._2))}
+  def update(t:(ParamName,Int), value:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){ update(t._1,value,MatchP(t._2))}
 
-  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,Some(t._2))
-  def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,None)
+  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,MatchP(t._2))
+  def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,MatchAll)
 
-  def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,None)})}
-  def optimise(list:(ParamName,Option[Int])*){optimiseSeq(list)}
-  def optimiseSeq(list:Seq[(ParamName,Option[Int])]){
-    val optParams = myParams.filter{t=>
-      list.filter{t2=> t2._2.isEmpty || Some(t._2)==t2._2}.map{_._1}.contains(t._1) 
-    } 
-    val s1 = optParams.map{t=>getOptParam(t._1,Some(t._2))}
-    if (s1 contains None){error("Not all specified params exist! " + s1.toList + " " + optParams )}
-    val start = s1.map{_.get}.flatten.toArray
-    val lengths = s1.map{_.get.length}
-    val numArguments = start.length
+  def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,MatchAll)})}
+  def optimise(list:(ParamName,ParamMatcher)*){optimiseSeq(list)}
+  def optimiseSeq(optParams:Seq[(ParamName,ParamMatcher)]){
+    val start = optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
+    val lengths = start.map{_.length}
+    val startArray = start.flatten.toArray
+    val numArguments = startArray.length
+    println("Start " + startArray.toList)
 
     import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}
     if (numArguments > 1){
       var bestlnL = -1E100
-      var bestParam:Array[Double]=start
+      var bestParam:Array[Double]=startArray
       val func = new MultivariateFunction{
         val lowerBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.lower(i)}}.flatten
         val upperBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.upper(i)}}.flatten
@@ -209,7 +215,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           var p2 = params.toList
           val splitP = lengths.map{l=> val ans = p2.take(l).toIndexedSeq; p2 = p2.drop(l); ans}
           optParams.zip(splitP).foreach{ t=> val ((pName,pIndex),values)=t
-            setOptParam(pName,values,Some(pIndex))
+            setOptParam(pName,values,pIndex)
           }
           val ans = logLikelihood
           if (ans > bestlnL){
@@ -225,22 +231,22 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
         }
       }
       val search = new ConjugateDirectionSearch
-      search.optimize(func,start,1E-4,1E-3)
+      search.optimize(func,startArray,1E-4,1E-3)
       println("Best " + bestParam.toList + " " + func.evaluate(bestParam))
     }else {
       val func = new UnivariateFunction{
-        val param = optParams.head
-        val getLowerBound = param._1.lower(0)
-        val getUpperBound = param._1.upper(0)
+        val (paramName,paramIndex) = optParams.head
+        val getLowerBound = paramName.lower(0)
+        val getUpperBound = paramName.upper(0)
         def evaluate(p:Double)={
-          setOptParam(param._1,Vector(p),Some(param._2))
+          setOptParam(paramName,Vector(p),paramIndex)
           val ans = logLikelihood
           println(p + " " + ans)
           -ans
         }
       }
       val search = new UnivariateMinimum
-      val finalP = search.optimize(start(0),func,1E-4)
+      val finalP = search.optimize(startArray(0),func,1E-4)
       func evaluate finalP
     }
   }

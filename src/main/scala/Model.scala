@@ -54,6 +54,11 @@ trait Model{
   def models:Seq[Model]=List(this)
   def add(m:Model,prior:Double,modelIndex:Int):Model
   def update(newParameters:(ParamName,IndexedSeq[Double])*):Model
+  protected def flatPriors(x:Int) = Vector.fill(x){1.0/x}
+  protected def repeatedPi(pi:IndexedSeq[Double],n:Int)={
+    val inPi = pi.map{_/n}
+    (0 until n).map{i=>inPi}.flatten
+  }
 }
 
 trait StdModel extends Model{
@@ -112,7 +117,6 @@ class ThmmSiteClassModel(val parameters:Parameters,val modelIndex:Int,realSwitch
   def wrapped = List(realSwitchingModel)
   def cleanParams = params
   def pi = realSwitchingModel.pi
-  lazy val exp = getCache[Exp]('Q,{()=>DefaultExpFactory(mat)})
   override def updatedRate(r:Double)=factory(parameters.updatedParam(Rate,r),wrapped,cache) 
   def factory(parameters:Parameters,realSwitchingModel:Seq[Model],cache:CalcCache)=new ThmmSiteClassModel(parameters,modelIndex,realSwitchingModel.head,len,cache)
 }
@@ -124,8 +128,6 @@ class StdSiteClassModel(val parameters:Parameters,val modelIndex:Int,val subMode
  //  = 
  lazy val pi = subModels.zip(priors).map{t=>t._1.pi.map{_*t._2}}.flatten.toIndexedSeq
  lazy val priors = parameters viewParam MixturePrior
- lazy val mat = getCache[Matrix]('Q,{()=>combineMatrices(subModels.map{_.mat},pi,rate)})
- lazy val exp = getCache[Exp]('Exp,{()=>DefaultExpFactory(mat)})
  val cleanParams=params
  def factory(parameters:Parameters,subModels:Seq[Model],cache:CalcCache)=new StdSiteClassModel(parameters,modelIndex,subModels,cache)//TODO optimise
 }
@@ -151,10 +153,6 @@ class GammaModel(val parameters:Parameters,val modelIndex:Int, var cache:CalcCac
   lazy val base = getCache[Model]('Base,{()=>{
     new BasicLikelihoodModel(parameters.filter{t=> t._1==Pi || t._1==S || t._1==Rate}, modelIndex,cleanCache)
   }})
-  lazy val mat = getCache[Matrix]('Q,{()=> 
-    
-    combineMatrices(subModels.map{_.mat},pi,rate)})
-  lazy val exp = getCache[Exp]('Exp,{()=>DefaultExpFactory(mat)})
   val cleanParams=params
   def factory(parameters:Parameters,subModels:Seq[Model],cache:CalcCache)=new GammaModel(parameters,modelIndex,cache,numClasses)//TODO optimise
 }
@@ -190,6 +188,8 @@ trait UsefulModelUtil extends Model{
   def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]] = {
     case _ => None
   }
+
+  lazy val exp = getCache[Exp]('Exp,{()=>DefaultExpFactory(mat)})
   def params = parameters.keySet.toSet
   def numberedParams = params map {p => (p,modelIndex)}
 
@@ -289,6 +289,7 @@ trait UsefulMixtureModel extends UsefulWrappedModel{
     }
   }
 
+ lazy val mat = getCache[Matrix]('Q,{()=>combineMatrices(subModels.map{_.mat},pi,rate)})
   def combineMatrices(mats:Seq[Matrix],pi:IndexedSeq[Double],rate:Double)={
     mats.foldLeft[IndexedSeq[IndexedSeq[Double]]]( Vector[Vector[Double]]() ){(m,m2)=>m addClass m2}.normalise(pi,rate)
   }
@@ -387,7 +388,6 @@ class BasicLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cach
   lazy val pi = Pi.getReal(parameters(Pi))
   lazy val s = S.getReal(parameters(S))
   lazy val mat = getCache[Matrix]('Q, {() => val ans = s.sToQ(pi,rate); ans}) 
-  lazy val exp = getCache[Exp]('Exp, {() => DefaultExpFactory(mat)}) 
   override val rate = parameters(Rate)(0)
 
 }
@@ -401,7 +401,7 @@ class InvarLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cach
   lazy val pi = Pi.getReal(parameters(Pi))
   lazy val mat = getCache[Matrix]('Q, {() => EnhancedIndexedMatrix.zero(pi.length)})
   override def rate = 0.0
-  lazy val exp = getCache[Exp]('Exp,{ () => 
+  override lazy val exp = getCache[Exp]('Exp,{ () => 
     new Exp{
       val intExp = EnhancedLinearMatrix.eye(parameters(Pi).length + 1)
       def exp(bl:Double)={

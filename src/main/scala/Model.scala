@@ -330,6 +330,8 @@ trait UsefulModel extends UsefulSingleModel{
    new StdSiteClassModel((MixturePrior << priors)::(Rate << 1.0)::Nil,addedIndex,List(this,m))
  }
 
+
+  lazy val mat = getCache[Matrix]('Q, {() => val ans = (parameters viewParam S).sToQ(pi,rate); ans}) 
  
   override def update(newParameters:(ParamName,IndexedSeq[Double])*):Model={
     val special = newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
@@ -360,7 +362,6 @@ trait UsefulModel extends UsefulSingleModel{
  override def updatedRate(r:Double)={
    exp.instantiated
     val newCache = if(cached('Exp)){
-      println("Rescaled Exp")
       Map[Symbol,Any]('Exp -> (exp))
     }else {
       cleanCache
@@ -387,7 +388,6 @@ class BasicLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cach
 
   lazy val pi = Pi.getReal(parameters(Pi))
   lazy val s = S.getReal(parameters(S))
-  lazy val mat = getCache[Matrix]('Q, {() => val ans = s.sToQ(pi,rate); ans}) 
   override val rate = parameters(Rate)(0)
 
 }
@@ -399,7 +399,7 @@ class InvarLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cach
   def factory(p:Parameters,cache:CalcCache)=new InvarLikelihoodModel(p,modelIndex,cache)
   val cleanParams = Set[ParamName]()
   lazy val pi = Pi.getReal(parameters(Pi))
-  lazy val mat = getCache[Matrix]('Q, {() => EnhancedIndexedMatrix.zero(pi.length)})
+  override lazy val mat = getCache[Matrix]('Q, {() => EnhancedIndexedMatrix.zero(pi.length)})
   override def rate = 0.0
   override lazy val exp = getCache[Exp]('Exp,{ () => 
     new Exp{

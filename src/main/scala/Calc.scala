@@ -169,7 +169,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
             case (tp:RootedTreePosition,n:INode)=>
               val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
               combinePartialLikelihoods( childCalc.map{_.join})
-            case (tp:TreePositionDir,l:Leaf)=> partialLikelihoodCalc(p.map{p2=>leafPartialLikelihoods(p2(l.id.get))},m(tp.upEdge))
+            case (tp:TreePositionDir,l:Leaf)=> partialLikelihoodCalc(allLeafPartialLikelihoods(p,l),m(tp.upEdge))
           }
         }
       }
@@ -191,10 +191,23 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
     logLikelihoodRoot()
   }
 
-  val leafPartialLikelihoods=immutableHashMapMemo{l:Letter=>l match {
-    case a if (a.isReal) => (0 until numClasses).foldLeft(List.fill(l.alphabet.length * numClasses)(0.0)){(list,i)=>list.updated(l.id +(i * l.alphabet.matLength),1.0)} 
-    case a => List.fill(l.alphabet.length * numClasses)(1.0)
+  val realCache  = aln.alphabet.matElements.sortBy{_.id}.map{l:Letter=> 
+    (0 until numClasses).foldLeft(List.fill(l.alphabet.length * numClasses)(0.0)){(list,i)=>list.updated(l.id +(i * l.alphabet.matLength),1.0)}
+  }.toIndexedSeq
+  val emptyCache = List.fill(aln.alphabet.length * numClasses)(1.0)
+
+  def leafPartialLikelihoods(l:Letter)={
+  l match {
+    case a if (a.isReal) => realCache(l.id)
+    case a => emptyCache
   }}
+  def allLeafPartialLikelihoods(p:List[Pattern],l:Leaf)=p.map{p2=>leafPartialLikelihoods(p2(l.id.get))}
+
+  /*
+  val allLeafPartialLikelihoods=immutableHashMapMemo{t:(List[Pattern],Leaf)=> val (p,l)=t
+    println("Recalc")
+    p.map{p2=> leafPartialLikelihoods(p2(l.id.get))}
+  }*/
 
 
   def factory(t:modiphy.tree.Tree,m:Model,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)

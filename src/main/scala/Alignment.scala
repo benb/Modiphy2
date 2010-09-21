@@ -79,6 +79,7 @@ class Alignment(gen:Map[String,Iterable[Letter]]){
       s + ">"+t._1 + "\n" + t._2.mkString("") + "\n" 
     }
   }
+  lazy val alphabet = columns.head.values.head.alphabet
 }
 
 class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{

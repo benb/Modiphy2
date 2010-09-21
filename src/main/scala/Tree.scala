@@ -63,18 +63,17 @@ object TreeTest{
       println(lkl.logLikelihood)
     }
     */
-    /*
+    val tree = Tree(tufaTree)
+    val aln  = new Fasta(tufaAln.lines) parseWith AminoAcid
+ 
     val model = GammaModel(aln.frequencies,WAG.S,0.5,4)
-    val lkl = new MixtureLikelihoodCalc(Vector.fill(4)(0.25),tree,aln,model)
+    val lkl = new MixtureLikelihoodCalc(tree,aln,model)
     val optModel = new OptModel(lkl,tree,aln)
     optModel optimiseAll Gamma
     optModel optimiseAll (Pi,Gamma)
     println(optModel)
-    */
 
-    val tree = Tree(tufaTree)
-    val aln  = new Fasta(tufaAln.lines) parseWith AminoAcid
-    }
+   }
     
 }
 

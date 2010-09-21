@@ -116,7 +116,7 @@ trait EnhancedVector[A <: Seq[Double]]{
   def normalise:A
   def normalize:A = normalise
   def sum:Double
-  def dotProduct(other:Seq[Double]):Double
+  def dotProduct(other:LinearSeq[Double]):Double
   def prod(other:Seq[Double]):A
   
 }
@@ -126,7 +126,7 @@ class EnhancedIndexedVector(seq:IndexedSeq[Double]) extends EnhancedVector[Index
     seq.map{i=> i/sum}
   }
   def sum = seq.reduceLeft{_+_}
-  def dotProduct(vect:Seq[Double])={
+  def dotProduct(vect:LinearSeq[Double])={
     var ans = 0.0
     seq.zip(vect).foreach{t=>ans = ans + t._1*t._2}
     ans
@@ -153,7 +153,7 @@ class EnhancedListVector(seq:LinearSeq[Double]) extends EnhancedVector[LinearSeq
     seq.map{i=> i/sum}
   }
   def sum = seq.reduceLeft{_+_}
-  def dotProduct(vect:Seq[Double])={
+  def dotProduct(vect:LinearSeq[Double])={
     var ans = vect.head * seq.head
     var l1 = vect.tail
     var l2 = seq.tail

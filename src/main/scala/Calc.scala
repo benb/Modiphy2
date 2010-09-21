@@ -8,7 +8,7 @@ import scala.collection.LinearSeq
 import modiphy.opt._
 
 object LikelihoodTypes{
-  type Pattern=String=>Letter
+  type Pattern=Int=>Letter
   type PartialLikelihoods = LinearSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
@@ -41,7 +41,7 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
   val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
   
   lazy val likelihoods  = {
-    val myLikelihoods = if (Parallel.on && false){
+    val myLikelihoods = if (Parallel.on && aln.patternLength > 1000){
       import jsr166y._
       class Calc(subModels:List[(LikelihoodCalc[Model],Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
         def compute = {
@@ -135,7 +135,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
           case (myTP:TreePositionDir,l:Leaf)=>   
           partialLikelihoodCalc(
             p.map{p2=>
-              leafPartialLikelihoods(p2(l.id.get))},
+              leafPartialLikelihoods(p2(aln.seqId(l.id.get)))},
               m(myTP.upEdge)
             )
         }
@@ -201,7 +201,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
     case a if (a.isReal) => realCache(l.id)
     case a => emptyCache
   }}
-  def allLeafPartialLikelihoods(p:List[Pattern],l:Leaf)=p.map{p2=>leafPartialLikelihoods(p2(l.id.get))}
+  def allLeafPartialLikelihoods(p:List[Pattern],l:Leaf)={val seqId =aln.seqId(l.id.get); p.map{p2=>leafPartialLikelihoods(p2(seqId))}}
 
   /*
   val allLeafPartialLikelihoods=immutableHashMapMemo{t:(List[Pattern],Leaf)=> val (p,l)=t

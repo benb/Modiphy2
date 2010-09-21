@@ -47,24 +47,26 @@ object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K
 
 class Alignment(gen:Map[String,Iterable[Letter]]){
   val names = gen.keys.toList
+  val seqId:Map[String,Int]=names.zipWithIndex.foldLeft(Map[String,Int]()){_+_}
   def numSeqs = gen.size
-  type Pattern=Map[String,Letter]
-  val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Map[String,Letter]]()){(ml,col)=>
-    names.zip(col).foldLeft(Map[String,Letter]()){(ml2,item)=>
-      ml2 + item
-    } :: ml
+  type Pattern=IndexedSeq[Letter]
+  val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Pattern]()){(ml,col)=>
+    col.toIndexedSeq :: ml
   }.reverse
-  lazy val patterns:Map[Pattern,Int]=columns.foldLeft(Map[Pattern,Int]()){(m,col)=>
-    m.updated(col,m.getOrElse(col,0)+1)
-  }
-  lazy val patternList=patterns.toList.map{_._1}
+  lazy val (patterns,patternLength)={
+  var len = 0
+  val ans = columns.foldLeft(Map[Pattern,Int]()){(m,col)=>
+    m.updated(col,m.getOrElse(col,{len=len+1;0})+1)
+  }.toList
+  (ans,len)
+}
+  lazy val patternList={ patterns.toList.map{_._1} }
   lazy val countList=patterns.toList.map{_._2}
   def apply(s:String)=gen(s)
   lazy val frequencies={
-    val alphabet = columns.head.values.head.alphabet
     var countMap=Map[Letter,Int]()
     columns.map{p:Pattern=>
-      countMap = p.values.foldLeft(countMap){(m,letter)=>
+      countMap = p.foldLeft(countMap){(m,letter)=>
         m updated (letter,m.getOrElse(letter,0)+1) 
       }
     }
@@ -72,14 +74,15 @@ class Alignment(gen:Map[String,Iterable[Letter]]){
     alphabet.matElements.map{countMap.getOrElse(_,0)}.map{_.toDouble/total}
   }.toIndexedSeq
   def restrictTo(seqs:Iterable[String])={
-    new Alignment(gen.filter{t=>seqs exists{_==t._1}})
+    val newGen = gen.filter{t=>seqs exists{_==t._1}}
+    if (newGen==gen){this}else { new Alignment(gen.filter{t=>seqs exists{_==t._1}})}
   }
   def toFasta={
     gen.foldLeft(""){(s,t)=>
       s + ">"+t._1 + "\n" + t._2.mkString("") + "\n" 
     }
   }
-  lazy val alphabet = columns.head.values.head.alphabet
+  lazy val alphabet = gen(names.head).head.alphabet
 }
 
 class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{

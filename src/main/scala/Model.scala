@@ -33,6 +33,7 @@ class ParametersWrapper(par:Parameters){
 */
 trait Model{
   def applies(p:ParamName,pM:ParamMatcher):Boolean
+  def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]]={case _ => None}
   def params:scala.collection.Set[ParamName]
   def numberedParams:scala.collection.Set[(ParamName,Int)]
   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):Model
@@ -156,6 +157,13 @@ class GammaModel(val parameters:Parameters,val modelIndex:Int, var cache:CalcCac
   }})
   val cleanParams=params
   def factory(parameters:Parameters,subModels:Seq[Model],cache:CalcCache)=new GammaModel(parameters,modelIndex,cache,numClasses)//TODO optimise
+
+  override def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]] = {
+    ({
+      case (Gamma,vec)=>Some(new GammaModel(parameters updated (Gamma,vec),modelIndex,cache-'Models,numCat))
+    }:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]]).orElse(super.specialUpdate)
+  }
+
 }
 
 object BasicLikelihoodModel{
@@ -191,7 +199,7 @@ trait UsefulModelUtil extends Model{
         case _ => error("Cache bug!")
     }
   }
-  def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]] = {
+  override def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]] = {
     case _ => None
   }
 
@@ -240,29 +248,34 @@ trait UsefulWrappedModel extends UsefulModelUtil{
     appliesToMe(p,pM) || wrapped.foldLeft(false){(bool,model)=> bool || model.applies(p,pM)}
   }
   def factory(parameters:Parameters,models:Seq[Model],cache:CalcCache):UsefulWrappedModel
-  override def update(myNewP:(ParamName,ParamMatcher,IndexedSeq[Double])*):UsefulWrappedModel={
+  override def update(myNewP:(ParamName,ParamMatcher,IndexedSeq[Double])*):Model={
     val newParameters = myNewP.filter{t=>appliesToMe(t._1,t._2)}.map{t=>(t._1,t._3)}
-    val newModels = wrapped.map{_.update(myNewP:_*)}
+    val special = newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
+      if (optM.isEmpty){None}else {optM.get.specialUpdate(p)}     
+    }
+    special.getOrElse{
+      val newModels = wrapped.map{_.update(myNewP:_*)}
 
-    val changedModels = newModels.zip(wrapped).foldLeft(false){(bool,t)=> bool || !(t._1 eq t._2)} // check for reference equality
+      val changedModels = newModels.zip(wrapped).foldLeft(false){(bool,t)=> bool || !(t._1 eq t._2)} // check for reference equality
 
-    val unClean = changedModels || newParameters.foldLeft(false){(bool,t)=>
+      val unClean = changedModels || newParameters.foldLeft(false){(bool,t)=>
       bool || cleanParams.contains(t._1)
     } || true //FIXME
     val newP = newParameters.foldLeft(parameters){(m,t)=>
-      if(m contains t._1){
-        m updated (t._1,t._2)
-      }else {
-        m
-      }
-    }
-    if (!(changedModels) && (newParameters==parameters)){
-      this
-    }else if (!unClean){
-      factory(newP,newModels,cache)
+    if(m contains t._1){
+      m updated (t._1,t._2)
     }else {
-      factory(newP,newModels,cleanCache)
+      m
     }
+  }
+  if (!(changedModels) && (newParameters==parameters)){
+    this
+  }else if (!unClean){
+    factory(newP,newModels,cache)
+  }else {
+    factory(newP,newModels,cleanCache)
+  }
+}
   }
 
   override lazy val params = wrapped.map{_.params}.foldLeft(super.params){(m,sub)=>m ++ sub}
@@ -351,7 +364,7 @@ trait UsefulModel extends UsefulSingleModel{
   override def update(newP:(ParamName,ParamMatcher,IndexedSeq[Double])*):Model={
     val newParameters = newP.filter(t=>appliesToMe(t._1,t._2)).map{t=>(t._1,t._3)}
     val special = newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
-      if (optM.isEmpty){None}else {specialUpdate(p)}     
+      if (optM.isEmpty){None}else {optM.get.specialUpdate(p)}     
     }
     special.getOrElse{
       val unClean = newParameters.foldLeft(false){(bool,t)=>
@@ -454,7 +467,6 @@ class GammaDist{
      ans
   }
   def gammaInverseCDF(prob:Double,alpha:Double,beta:Double)=chiSquareInverseCDF(prob,2.0*(alpha))/(2.0*(beta))
-
 
   def apply(shape:Double,numCat:Int):IndexedSeq[Double]={
     gamma(shape,numCat)

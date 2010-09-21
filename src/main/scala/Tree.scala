@@ -288,13 +288,13 @@ class Tree(val edges:IndexedSeq[Edge],
 
   override def toString = toString(defaultRoot) + ";"
 
-import modiphy.util.Memo
-  lazy val leafCache:Memo[(Node,Option[Edge]),Seq[Leaf]]=Memo[(Node,Option[Edge]),Seq[Leaf]]({t=>
+import scalaz.Scalaz._
+  lazy val leafCache:((Node,Option[Edge]))=>IndexedSeq[Leaf] = mutableHashMapMemo{t:(Node,Option[Edge])=>
     t match {
       case (l:Leaf,_)=>Vector(l)
       case (n:Node,e)=>children(n,e).map{e=> leafCache((e from n right,Some(e)))}.foldLeft(Vector[Leaf]()){_++_}
     }
-  })
+  }
   def leaves(n:Node,e:Edge):Seq[Leaf]=leafCache(n,Some(e))
   def leaves(n:Node):Seq[Leaf]=leafCache(n,None)
   def leaves(treePos:TreePositionDir):Seq[Leaf]=leaves(treePos.get,treePos.upEdge)

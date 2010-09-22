@@ -100,7 +100,7 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
       val t = p.reduceLeft{_+_}
       ans = p.map{_/t}::ans
     }
-    ans
+    ans.reverse
   }
   lazy val likelihoods = {
     val myLikelihoods = subLikelihoods.map{_.iterator}

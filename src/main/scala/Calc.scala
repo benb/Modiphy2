@@ -38,15 +38,15 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
 class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc[Model]]]=None) extends LikelihoodCalc[Model]{
   def priors = m.priors
   val models = m.models
-  val lklCalc = lkl.getOrElse{models.map{new SimpleLikelihoodCalc(tree,_,aln)}}
+  val lklCalc = lkl.getOrElse{models.map{_.likelihoodCalc(tree,aln)}}
   
-  lazy val likelihoods  = {
+  lazy val subLikelihoods  = {
     val myLikelihoods = if (Parallel.on && aln.patternLength > 1000){
       import jsr166y._
-      class Calc(subModels:List[(LikelihoodCalc[Model],Double)]) extends RecursiveTask[Seq[Iterator[Double]]]{
+      class Calc(subModels:List[(LikelihoodCalc[Model],Double)]) extends RecursiveTask[Seq[Seq[Double]]]{
         def compute = {
           subModels match {
-            case model::Nil => subModels.map{t=> t._1.likelihoods.map{_ * t._2}}.map{_.iterator}
+            case model::Nil => subModels.map{t=> t._1.likelihoods.map{_ * t._2}}
             case model::tail => subModels.map{model => new Calc(List(model))}.map{_.fork}.map{_.join}.map{_.head}
             case Nil => Nil
           }
@@ -58,8 +58,52 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
     }else {
       lklCalc.zip(priors).map{t=> 
         t._1.likelihoods.map{_ * t._2}
-      }.map{_.iterator}
+      }
     }
+    myLikelihoods
+  }
+  /*
+    list of likelihoods for each component in order
+    each component will supply a type A, where A is either
+    Seq[Double] or Seq[A]. If there are many nested submodels then
+    the rabbit hole could go quite deep...
+
+    It is intended to use pattern matching to extract the A's
+  */
+  lazy val componentLikelihoods:List[_] = {
+    def scale(prior:Double,seq:List[_]):List[_]={
+      seq.map{sub=>sub match {
+        case d:Double=>{d*prior}
+        case s:List[_] =>scale(prior,s)
+      }}
+    }
+    lklCalc.zip(priors).map{t=> scale(t._2,t._1.componentLikelihoods) }.toList
+  }
+  lazy val flatComponentLikelihoods:List[List[Double]]={
+    def flatten(ans:List[List[Double]],in:List[_]):List[List[Double]]={
+      in match {
+        case Nil => ans.reverse
+        case s => s.head match {
+          case s2:List[_] => flatten(flatten(ans,s),in.tail)
+          case d:Double => flatten(s.asInstanceOf[List[Double]]::ans,s.tail)
+        }
+      }
+    }
+    flatten(List(List[Double]()),componentLikelihoods)
+  }
+  
+  lazy val posteriors:Seq[Seq[Double]] = {
+    val iters = flatComponentLikelihoods.map{_.iterator}
+    var ans = List[List[Double]]()
+    while (iters.head.hasNext){
+      val p = iters.map{_.next}
+      val t = p.reduceLeft{_+_}
+      ans = p.map{_/t}::ans
+    }
+    ans
+  }
+  lazy val likelihoods = {
+    val myLikelihoods = subLikelihoods.map{_.iterator}
     var ans = List[Double]()
     while (myLikelihoods.head.hasNext) {
       ans = myLikelihoods.map{_.next}.reduceLeft{_+_} ::ans
@@ -106,8 +150,11 @@ trait LikelihoodCalc[A <: Model]{
    def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc[A]
    def model:A
    def likelihoods:LinearSeq[Double]
+   def posteriors:Seq[Seq[Double]]
+   def componentLikelihoods:List[_]
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[Model]{
+  def this(tree:Tree,aln:Alignment,m:Model)=this(tree,m,aln)
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
@@ -117,6 +164,8 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
   val numClasses = m.numClasses
 
   
+  def componentLikelihoods=List(likelihoods)
+    def posteriors=List(likelihoods.map{f=>1.0})
   def model=m
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.setOptParam(p,vec,paramIndex))}
 

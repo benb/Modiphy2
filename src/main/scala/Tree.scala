@@ -295,8 +295,8 @@ import scalaz.Scalaz._
       case (n:Node,e)=>children(n,e).map{e=> leafCache((e from n right,Some(e)))}.foldLeft(Vector[Leaf]()){_++_}
     }
   }
-  def leaves(n:Node,e:Edge):Seq[Leaf]=leafCache(n,Some(e))
-  def leaves(n:Node):Seq[Leaf]=leafCache(n,None)
+  def leaves(n:Node,e:Edge):Seq[Leaf]=this.synchronized{leafCache(n,Some(e))}
+  def leaves(n:Node):Seq[Leaf]=this.synchronized{leafCache(n,None)}
   def leaves(treePos:TreePositionDir):Seq[Leaf]=leaves(treePos.get,treePos.upEdge)
   def leaves(treePos:RootedTreePosition):Seq[Leaf]=
     treePos match {

@@ -104,9 +104,14 @@ case class Root(children:Set[NonRoot]) extends Node{
     ans
   }
   lazy val allSplits:IndexedSeq[Split]=
-    allRootedTrees.toList.flatMap{root=> root.children.map{x=>
-      Split(x,SubTree(root.children-x))}
-    }.toIndexedSeq.sorted.distinct
+   allRootedTrees.toList.flatMap{root=> root.children.map{x=>
+     if (root.children.size >2){
+      Split(x,SubTree(root.children-x))
+    }else {
+      Split(x,(root.children-x).head)
+    }
+    }
+   }.toIndexedSeq.sorted.distinct
   lazy val split:Map[NonRoot,Split]={
     allSplits.flatMap{s => (s.left,s)::(s.right,s)::Nil}.toMap
   }
@@ -189,19 +194,25 @@ case class Tree(root:Root,bl:IndexedSeq[Double]){
     drop(Leaf(s))
   }
   lazy val branchLength:Map[NonRoot,Double]={
-    root.allMySubTrees.foreach{s=>
-      assert (root.split(s).left == s || root.split(s).right ==s)
-    }
-    assert(bl.length==root.allMySubTrees.size)
-    val ans =  root.allMySubTrees.map{root.split}.toList.sorted.zip(bl).flatMap{t=>List((t._1.left,t._2),(t._1.right,t._2))}.toMap
-    root.allSubTrees.foreach{s=>
-     assert(ans.get(s) != None)
-    }
-    ans
+    root.allMySubTrees.map{root.split}.toList.sorted.zip(bl).flatMap{t=>List((t._1.left,t._2),(t._1.right,t._2))}.toMap
   }
   def branchLength(i:Int):Double=bl(i)
   def numNodes = root.numNodes
   def numLeaves = root.numLeaves
+  def makeTrifurcating={
+    assert(root.children.size==2)
+    val left:SubTree = root.children.find{_.isInstanceOf[SubTree]}.get.asInstanceOf[SubTree]
+    val right:NonRoot = (root.children-left).head
+    val newRootBL = branchLength(left) + branchLength(right)
+    val newRoot = Root(left.children + right)
+    val blMap = root.allSplits.zip(bl).toMap 
+    val newBLMap = (blMap.updated(root.split(right),blMap(root.split(right))+blMap(root.split(left))) - root.split(left)).toIndexedSeq
+
+    println(blMap)
+    println(newBLMap)
+
+    Tree(newRoot, newBLMap.sortBy(_._1).map{_._2})
+  }
 }
 object Tree{
   def apply(newick:String):Tree = {

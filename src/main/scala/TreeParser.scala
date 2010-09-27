@@ -15,10 +15,24 @@ class TreeParser() extends JavaTokenParsers{
     case "("~node1~nodeList~");" => 
       val fullList:List[(NonRoot,BranchLengthMap)] = node1::nodeList
       val root = Root(fullList.map{_._1}.toSet)
-      val finBL:IndexedSeq[(Split,BranchLength)] = fullList.map{_._2}.reduceLeft(_++_).map{t => (root.split(t._1),t._2)}.toIndexedSeq
-      val finBL2 = finBL.sortBy(_._1).map{_._2._1}
-      assert(finBL2.length == root.allMySubTrees.size)
-      Tree(root,finBL2)
+      if (root.children.size==2){
+        val left = root.children.find(c=>c.isInstanceOf[SubTree]).get.asInstanceOf[SubTree]
+        val right = (root.children - left).head
+        val newRoot = Root(left.children + right)
+          val finBL3:IndexedSeq[(Split,BranchLength)] = fullList.map{_._2}.reduceLeft(_++_).toList.map{t => (root.split(t._1),t._2)}.foldLeft(Map[Split,BranchLength]()){(m,t)=> 
+           val init = m.getOrElse(t._1,(0.0,None))
+           val ans = (init._1 + t._2._1, if (init._2.isDefined){init._2}else {t._2._2})
+            m updated (t._1,ans)
+        }.toIndexedSeq
+        val finBL4 = finBL3.sortBy(_._1).map{_._2._1}
+        assert(finBL4.length == newRoot.allMySubTrees.size)
+        Tree(newRoot,finBL4)
+      }else {
+        val finBL:IndexedSeq[(Split,BranchLength)] = fullList.map{_._2}.reduceLeft(_++_).map{t => (root.split(t._1),t._2)}.toIndexedSeq
+        val finBL2 = finBL.sortBy(_._1).map{_._2._1}
+        assert(finBL2.length == root.allMySubTrees.size)
+        Tree(root,finBL2)
+      }
   }
 
   def node: Parser[(NonRoot,BranchLengthMap)] = leaf | "("~node~rep(","~>node)~"):"~branchLength ^^ {

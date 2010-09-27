@@ -1,325 +1,210 @@
 package modiphy.tree
-import scala.collection.immutable.Map.WithDefault
-import modiphy.alignment._
-import modiphy.model._
-import modiphy.alignment.GlobalAlphabet._
-import scala.collection.LinearSeq
-
-import modiphy.opt._
-
-object Parallel{
-  var on = true
-  import jsr166y._
-  lazy val forkJoinPool = new ForkJoinPool
-  lazy val threshold = -1
+import scala.collection.IndexedSeq
+sealed trait Node{
+  def allMySubTrees:Set[NonRoot]
+  def numNodes:Int
+  def numLeaves:Int
 }
-abstract class Node{
- def id:Option[String]=None
+sealed trait NonRoot extends Node{
+  def reRoot(parent:Root):Option[Root]
+  def allRootedTrees(parent:Root):Set[Root]
+  def toRoot(n:NonRoot):Option[Root]
+  def branchLengthString(bl:NonRoot=>Double):String
+  def drop(sub:NonRoot):NonRoot
 }
-case class Leaf(name:String) extends Node{override val id=Some(name)}
-case class Edge(left:Node,right:Node,dist:Double){
-  def hasNode(n:Node) = {left==n || right==n}
-  def traverse(n:Node)=n match {
-    case `left` => right
-    case `right` => left
-    case _ => left
+class Split(val left:NonRoot,val right:NonRoot) extends Ordered[Split]{
+  override def equals(other:Any)= other match {
+    case Split(`left`,`right`)=>true
+    case Split(`right`,`left`)=>true
+    case _ => false
   }
-  def flip=copy(left=right,right=left)
-  def from(n:Node)=n match {
-     case `left` => this
-     case `right` => flip
+  override def toString = "Split( " + left + " , " + right + ")"
+  def compare(that:Split)={
+    val a = if (left.toString < right.toString){left.toString}else{right.toString}
+    a.compare{
+      if (that.left.toString < that.right.toString){that.left.toString}else{that.right.toString}
+    }
   }
-  def to(n:Node)=from(n).flip
-  def same(that:Edge) = this==that || flip==that
-  def different(that:Edge)= !(same(that))
+  override def hashCode = (left.hashCode + right.hashCode) * 43
+  /*
+   Is the other split compatible with this, i.e. does it represent the same 
+   split on a tree with either additional or dropped nodes on one side
+  */
+  def compatible(other:Split)={
+    other.left==left || other.right==left || other.left==right || other.right==right
+  }
 }
-class INode extends Node
+object Split{
+  def apply(left:NonRoot,right:NonRoot)=new Split(left,right)
+  def unapply(s:Split) = Some(s.left,s.right)
+}
+
+object SubTree{
+  def apply(c1:NonRoot,c2:NonRoot):SubTree=SubTree(Set(c1,c2))
+  def apply(c1:NonRoot,c2:NonRoot,c3:NonRoot):SubTree=SubTree(Set(c1,c2,c3))
+}
+case class SubTree(children:Set[NonRoot]) extends NonRoot{
+  def subTrees=children.filter{_ match {case t:SubTree=>true; case _=>false}}.map{_.asInstanceOf[SubTree]}
+  def reRoot(parent:Root) = parent.childReRoot(this)
+    override def toString="(" + children.mkString(",") + ")"
+  def allRootedTrees(oldRoot:Root):Set[Root] = {
+    val meRoot = oldRoot.childReRoot(this).get
+    val local = children.map{_.reRoot(meRoot)}.filterNot{_==None}.map{_.get}
+    children.foldLeft(local){(m,c)=> m ++ c.allRootedTrees(meRoot)}
+  }
+  //FIXME
+  def toRoot(c3:NonRoot)=Some(Root(children + c3))
+
+
+  def allMySubTrees = children.map{_.allMySubTrees}.foldLeft(children){(m,a) => m ++ a}// + this
+  def branchLengthString(bl:NonRoot=>Double)={
+    "(" + children.map{_.branchLengthString(bl)}.mkString(",") + "):" + bl(this).toString
+  }
+  def drop(sub:NonRoot)={
+    val newChildren = children.filterNot{_==sub}.map{_.drop(sub)}.map{node => 
+     node match {
+       case l:Leaf => l
+       case s:SubTree => 
+         if (s.children.size==1){
+           s.children.head
+         }else {
+           node
+         }
+       }
+     }
+     SubTree(newChildren)
+   }
+  def numNodes = 1 + children.foldLeft(0){_+_.numNodes}
+  def numLeaves = children.foldLeft(0){_+_.numLeaves}
+
+}
+object Root{
+  def apply(c1:NonRoot,c2:NonRoot,c3:NonRoot):Root=Root(Set(c1,c2,c3))
+}
+case class Root(children:Set[NonRoot]) extends Node{
+  def childReRoot(n:NonRoot):Option[Root] = n match {
+    case t:SubTree if (children(t))=> t.toRoot(SubTree(children-t))
+    case _ => None
+  }
+  def allRootedChildren:Set[Root] = children.map{childReRoot}.filterNot{_==None}.map{_.get}
+  lazy val allRootedTrees:Set[Root] = {
+    val start:Set[Set[Root]] = children.map{_.allRootedTrees(this)}
+    val ans = start.foldLeft(allRootedChildren + this){_++_}
+    assert(ans.size > 1)
+    ans
+  }
+
+  def allMySubTrees:Set[NonRoot] = children.flatMap{_.allMySubTrees} ++ children
+  /*
+   Seq of all possible SubTrees from all possible rootings
+  */
+  lazy val allSubTrees:IndexedSeq[NonRoot]={
+    val ans = allRootedTrees.map{_.allMySubTrees}.foldLeft(Set[NonRoot]()){_++_}.toIndexedSeq
+    assert(ans.length > 1)
+    ans
+  }
+  lazy val allSplits:IndexedSeq[Split]=
+    allRootedTrees.toList.flatMap{root=> root.children.map{x=>
+      Split(x,SubTree(root.children-x))}
+    }.toIndexedSeq.sorted.distinct
+  lazy val split:Map[NonRoot,Split]={
+    allSplits.flatMap{s => (s.left,s)::(s.right,s)::Nil}.toMap
+  }
+  def reRoot(i:Int):Root=reRoot(allSplits(i).left)
+  def reRoot(anySub:NonRoot):Root={ allRootedTrees.find{root=> root.children.contains(anySub)}.get }
+  override def toString="(" + children.mkString(",") + ");"
+  def branchLengthString(blSeq:IndexedSeq[Double]):String={
+    branchLengthString(allSplits.map{_.left}.zip(blSeq).toMap ++ allSplits.map{_.right}.zip(blSeq))
+  }
+  def branchLengthString(bl:Map[NonRoot,Double]):String={
+    "(" + children.map{_.branchLengthString(bl)}.mkString(",") + ");"
+  }
+  def drop(sub:NonRoot)={
+    val newChildren = children.filterNot{_==sub}.map{_.drop(sub)}.map{node => 
+     node match {
+       case l:Leaf => l
+       case s:SubTree => 
+         if (s.children.size==1){
+           s.children.head
+         }else {
+           s
+         }
+       }
+     }
+     Root(newChildren)
+  }
+  def numNodes = 1 + children.foldLeft(0){_+_.numNodes}
+  def numLeaves = children.foldLeft(0){_+_.numLeaves}
+}
+case class Leaf(name:String) extends NonRoot{
+  override def toString = name
+  def reRoot(n:Root)=None
+  def toRoot(n:NonRoot)=None
+  def allRootedTrees(parent:Root)=Set()
+  def allMySubTrees = Set()
+  def branchLengthString(bl:NonRoot=>Double)={
+    name + ":" +  bl(this).toString
+  }
+  def drop(sub:NonRoot)=this
+  def numNodes=1
+  def numLeaves=1
+}
 
 object TreeTest{
+  implicit def toLeaf(s:String)=Leaf(s)
+  implicit def toSubTree(t:(NonRoot,NonRoot))=SubTree(t._1,t._1)
   def main(args:Array[String]){
-    import modiphy.test.ModelData._
-    import modiphy.math.constants._
-    /*
-    val iNode1 = new INode
-    val iNode2 = new INode
-    val tree = Tree(Edge(Leaf("human"),iNode1,0.10) :: Edge(Leaf("chimp"),iNode1,0.12) :: Edge(iNode1,iNode2,0.21) :: Edge(iNode2,Leaf("gorilla"),0.31) :: Nil)
-
-    println(tree)
-    println(tree.treeLength)
-    */
-    /*
-
-    if(args.length >1 && (args(1) startsWith "par")){Parallel.on=true}
-    if(args.length >1 && (args(1) startsWith "nopar")){Parallel.on=false}
-    val tree = Tree(treeStr)
-    val aln = Fasta(alnStr).parseWith(AminoAcid)
-    */
-/*
-    val model = BasicLikelihoodModel(WAG.pi,WAG.S)
-
-
-    (0 until args(0).toInt).foreach{i=>
-      val lkl = new SimpleLikelihoodCalc(tree,model,aln) 
-      println(lkl.logLikelihood)
-    }
-    */
-    val tree = Tree(tufaTree)
-    val aln  = new Fasta(tufaAln.lines) parseWith AminoAcid
- 
-    val model = GammaModel(aln.frequencies,WAG.S,0.5,4)
-    val lkl = new MixtureLikelihoodCalc(tree,aln,model)
-    val optModel = new OptModel(lkl,tree,aln)
-    optModel optimiseAll Gamma
-    optModel optimiseAll (Pi,Gamma)
-    println(optModel)
-
-   }
-    
+    val t1 = Root(SubTree(SubTree("onea","oneb"),"two"),SubTree(SubTree("threea","threeb"),"four"),SubTree("five","six"))
+    println(t1)
+    println(t1.allRootedChildren)
+    println(t1.allSubTrees)
+    println(t1.allSplits.map{t=> t.left.toString + "/" + t.right.toString})
+    println(t1.allRootedTrees.mkString("\n"))
+    println(t1.branchLengthString((0.0 to 2.0 by 0.1).toIndexedSeq))
+    println(t1.allRootedChildren.toList(2).branchLengthString((0.0 to 2.0 by 0.1).toIndexedSeq))
+  }
 }
 
-object Tree{
-  def apply(edges:IndexedSeq[Edge],nodes:Set[Node],edgeMap:Map[Node,List[Edge]]):Tree=new Tree(edges,nodes,edgeMap)
-  def apply(edges:List[Edge]):Tree={
-    val edgeMap = edges.foldLeft(new WithDefault(Map[Node,List[Edge]](),{n:Node=>List[Edge]()})){(m,e)=> m updated (e.left,e::m(e.left)) updated (e.right,e::m(e.right))}
-    Tree(edges.toIndexedSeq,edges.foldLeft(Set[Node]()){(s,e)=>(s+e.left)+e.right},edgeMap)
+case class Tree(root:Root,bl:IndexedSeq[Double]){
+  def getBranchLengths = bl
+  def setBranchLengths(bl2:IndexedSeq[Double])=copy(root,bl2)
+  def setBranchLength(i:Int,bl2:Double)=copy(root,bl.updated(i,bl2))
+  override def toString = root.branchLengthString(bl)
+  lazy val treeLength = bl.reduceLeft(_+_)
+  def drop(sub:NonRoot):Tree={
+    val newRoot = root.drop(sub)
+    val newBl = root.allSplits.map{s1=>newRoot.allSplits.find(s2=> s2 compatible s1)}.zip(bl).foldLeft(Map[Split,Double]()){(m,t)=> val (newSplit,bl)=t
+      if (newSplit.isDefined){
+        m.updated(newSplit.get,m.getOrElse(newSplit.get,0.0)+bl) 
+      }else {
+        m
+      }
+    }.toIndexedSeq
+    val newBl2 = newBl.sortBy{_._1}.map{_._2}
+    Tree(newRoot,newBl2)
   }
+  def drop(s:String):Tree={
+   // val sub = new TreeParser{def parseAll=parse(node,s)}.parseAll.get._1
+  //  drop(sub)
+    drop(Leaf(s))
+  }
+  lazy val branchLength:Map[NonRoot,Double]={
+    root.allMySubTrees.foreach{s=>
+      assert (root.split(s).left == s || root.split(s).right ==s)
+    }
+    assert(bl.length==root.allMySubTrees.size)
+    val ans =  root.allMySubTrees.map{root.split}.toList.sorted.zip(bl).flatMap{t=>List((t._1.left,t._2),(t._1.right,t._2))}.toMap
+    root.allSubTrees.foreach{s=>
+     assert(ans.get(s) != None)
+    }
+    ans
+  }
+  def branchLength(i:Int):Double=bl(i)
+  def numNodes = root.numNodes
+  def numLeaves = root.numLeaves
+}
+object Tree{
   def apply(newick:String):Tree = {
     new TreeParser{def parseAll=parse(tree,newick)}.parseAll.get
   }
-  import java.io.File
-  def apply(file:File):Tree = {
-    apply(scala.io.Source.fromFile(file).getLines.map{_.trim}.mkString(""))
-  }
 }
-
-trait TreePosition{
-  val get:Node
-  def neighbours:Seq[TreePosition]
-}
-trait RootedTreePosition extends TreePosition{
-  import modiphy.util.Memo
-  val children:Seq[TreePositionDir]
-  def neighbours:Seq[RootedTreePosition] = children
-  val ancestralTo:Memo[Node,Boolean] = Memo[Node,Boolean]({n=>
-    neighbours.foldLeft(false){(bool,neighbour)=>
-      bool || n==neighbour.get || neighbour.ancestralTo(n) //this last one could blow the stack....
-    } 
-  })
-  def hashCodeFunc:Int = children.map{_.hashCode}.foldLeft(get.hashCode + 41){(h1,child)=>
-    h1 * 41 + child.hashCode
-  }
-  override lazy val hashCode = hashCodeFunc
-  override def equals(o:Any)={
-    o match {
-      case that:TreePositionDir=>false
-      case that:RootedTreePosition=>that.get==get && (that.tree eq tree)
-      case _ => false
-    }
-  }
-  val tree:Tree
-  val leaves:Seq[Leaf]
-  val id:Int
-}
-trait TreePositionDir extends RootedTreePosition{
-  val upEdge:Edge
-  override lazy val hashCode:Int = super.hashCodeFunc + 41 * upEdge.hashCode
-  override def equals(o:Any)={
-    o match {
-      case that:TreePositionDir=>that.upEdge==upEdge && that.get==get && (that.tree eq tree)
-      case _ => false
-    }
-  }
-  val tree:Tree
-}
-
-class Tree(val edges:IndexedSeq[Edge],
-  nodes:Set[Node],
-  edgeMap:Map[Node,List[Edge]],
-  startiNodes:Option[Set[INode]] = None,
-  root:Option[INode]=None,
-  startLabels:Option[Map[String,Node]] = None){
-
-  lazy val branchLength = edges.map{_.dist}.toIndexedSeq
-
-
-  def drop(leafName:String)={
-    val hasEdge = edgeMap.filter{t=> t._1==Leaf(leafName)}//.head._2.head
-    if (hasEdge.isEmpty){
-      this
-    }else {
-      val upEdge = hasEdge.head._2.head
-      val iNode = upEdge from Leaf(leafName) right
-
-      val newNodes = nodes.filter{n=> n!=Leaf(leafName) } 
-      val newEdges = edgeMap.filter{t=> t._1!=Leaf(leafName)}.map{t=> (t._1, t._2.filter{e=>e different upEdge})}
-      new Tree(edges.filter{e => e different upEdge},newNodes,newEdges,None,root,None) dropIfSafe (iNode.asInstanceOf[INode])
-    }
-  }
-  def dropIfSafe(iNode:INode)={
-    if (edgeMap(iNode).length >2 ){
-      this
-    }else {
-      val uselessEdges = edgeMap(iNode)
-      val len = uselessEdges.map{_.dist}.reduceLeft{_+_}
-      val ends = uselessEdges.map{_ from iNode right}
-
-      val newEdge = Edge(ends(0),ends(1),len)
-        val newEdgeMap = edgeMap.filter{t=> t._1 != iNode}.updated(ends(0), newEdge::edgeMap(ends(0)).filter{e=> e different uselessEdges(0)}).updated(ends(1),newEdge::edgeMap(ends(1)).filter{e=> e different uselessEdges(1)})
-
-        new Tree(edges.filter{e=>uselessEdges.find(e2=> e same e2).isEmpty} :+ newEdge, nodes.filter{n=> n!=iNode},newEdgeMap) 
-    }
-  }
-
-  def restrictTo(list:Seq[String])={
-    val remove = leafNodes.map{_.name}.filter{name => !list.contains{name}}
-    remove.foldLeft(this){(tree,leaf)=> tree.drop(leaf)}
-  }
-  
-
-  def numNodes = nodes.size
-  def numLeaves = nodes.filter{n => n.isInstanceOf[Leaf]}.size
-  
-
-  val iNodes = startiNodes.getOrElse(nodes.filter{_.isInstanceOf[INode]}.map{_.asInstanceOf[INode]}).toIndexedSeq
-  def nodeID(n:INode)=iNodes.indexOf(n)
-  def edgeID(e:Edge)={
-    edges.indexOf(e) match {
-      case -1 => edges.indexOf(e.flip) + edges.length
-      case i => i
-    }
-  }
-
-
-  val leafNodes = nodes.filter{_.isInstanceOf[Leaf]}.map{_.asInstanceOf[Leaf]}
-  val defaultRoot = root getOrElse iNodes.head
-  val labels = startLabels getOrElse nodes.foldLeft(Map[String,Node]()){(m,n)=> if (n.id.isDefined){m updated (n.id.get,n)}else{m}}
-  lazy val edgeSet = edges.foldLeft(Set[Edge]()){_+_}
-
-  def hasEdge(e:Edge)=edgeSet.contains(e)
-
-  def traverseFrom(n:Node):Option[TreePosition]=Some(new TreePosition{
-    val get = n
-    lazy val neighbours = edgeMap(n).map{e=>traverseFrom(e from n right).get}
-  })
-
-  def traverseFrom(s:String):Option[TreePosition]={
-    if (labels contains s){
-      traverseFrom(labels(s))
-    }else {
-      None
-    }
-  }
-
-  def traverseDown(n:Node,dir:Edge):TreePositionDir={
-    val parent =this
-    new TreePositionDir{
-      val get = n
-      lazy val children = edgeMap(n).filter{e=> ! (e same dir)}.map{e=>traverseDown(e from n right,e)}
-      val upEdge = dir
-      val leaves = parent.leaves(n,dir)
-      val tree = parent
-      val id = edgeID(dir to n)
-    }
-  }
-
-  def traverseDown(n:INode):RootedTreePosition={
-    val parent =this
-    new RootedTreePosition{
-      val get = n
-      lazy val children = edgeMap(n).map{e=>traverseDown(e from n right,e)}
-      val leaves = parent.leaves(n)
-      val tree = parent
-      val id = nodeID(n) + edges.length * 2
-    }
-  }
-
-  val maxID = edges.length * 2 + iNodes.length
-
-  def copy(
-    newEdges:IndexedSeq[Edge] = edges,
-    newNode:Set[Node] = nodes,
-    newEdgeMap:Map[Node,List[Edge]] = edgeMap,
-    newINodes:Option[Set[INode]] = Some(iNodes.toSet),
-    root:Option[INode] = Some(defaultRoot)
-  ) = new Tree(newEdges,newNode,newEdgeMap,newINodes,root)
-  def reRoot(n:INode)=copy(root=Some(n))
-  def setBranchLength(i:Int,d:Double)={
-    val oldEdge = edges(i)
-    val e = oldEdge
-    val newEdge = edges(i).copy(dist=d)
-    val myNewEdgeMap = edgeMap.updated(e.left,newEdge::edgeMap(e.left).filter{_!=oldEdge}).updated(e.right,newEdge::edgeMap(e.right).filter{_!=oldEdge})
-    val nE = edges.updated(i,newEdge)
-    assert(nE.length==edges.length)
-      val ans = copy(newEdges = edges.updated(i,newEdge),newEdgeMap = myNewEdgeMap)
-  //    println("New tree " + i + " " + d + " " + ans)
-    ans
-  }
-  def setBranchLengths(vec:Seq[Double])={
-    var myNewEdgeMap = edgeMap
-    if (vec.length < edges.length){error("Tree with " + edges.length + " edges but only " + vec.length + " lengths specified")}
-    val edges2 = edges.zip(vec).map{ t=>val (e,d)=t
-      if (e.dist!=d){
-        val ans = e.copy(dist=d)
-        myNewEdgeMap = myNewEdgeMap.updated(e.left,ans::myNewEdgeMap(e.left).filter{_!=e}).updated(e.right,ans::myNewEdgeMap(e.right).filter{_!=e})
-        ans
-      }else {
-        e
-      }
-    }
-    assert(edges2.length==edges.length)
-    copy(newEdges=edges2,newEdgeMap = myNewEdgeMap)
-  }
-  lazy val getBranchLengths = edges.map{_.dist}
-
-  def treeLength = edges.map{_.dist}.foldLeft(0.0D){_+_}
-  def getEdges=edgeMap
-  def getEdgesTo(n:Node)=edgeMap(n).map{e=>e to n}
-  def children(n:Node,dir:Option[Edge]=None)=dir match {
-    case None => getEdges(n).map{e=>e from n}
-    case Some(ex) => getEdges(n).filter{e=> !(e same ex)}.map{e=>e from n}
-  }
-
-  def ancestralTo(n:Node,dir:Edge):Set[Edge]={
-    val edgesTo = getEdgesTo(n).filter{e=> !(e same dir)}
-    edgesTo.map{e=>ancestralTo(e.left,e)}.foldLeft(edgesTo.toSet){_++_}
-  }
-    
-  def ancestralTo(e:Edge):Set[Edge]=ancestralTo(e.left,e)
-
-  override def toString = toString(defaultRoot) + ";"
-
-import scalaz.Scalaz._
-  lazy val leafCache:((Node,Option[Edge]))=>IndexedSeq[Leaf] = mutableHashMapMemo{t:(Node,Option[Edge])=>
-    t match {
-      case (l:Leaf,_)=>Vector(l)
-      case (n:Node,e)=>children(n,e).map{e=> leafCache((e from n right,Some(e)))}.foldLeft(Vector[Leaf]()){_++_}
-    }
-  }
-  def leaves(n:Node,e:Edge):Seq[Leaf]=this.synchronized{leafCache(n,Some(e))}
-  def leaves(n:Node):Seq[Leaf]=this.synchronized{leafCache(n,None)}
-  def leaves(treePos:TreePositionDir):Seq[Leaf]=leaves(treePos.get,treePos.upEdge)
-  def leaves(treePos:RootedTreePosition):Seq[Leaf]=
-    treePos match {
-      case tP:TreePositionDir => leaves(tP.get,tP.upEdge)
-      case root:RootedTreePosition => leafNodes.toList
-    }
-
-  def toString(node:Node,direction:Option[Edge]=None):String = { 
-   (node,direction) match { 
-    case (n:INode,None) => "("+getEdges(node).map{e=>toString(e from n)}.mkString(",")+")"
-    case (n:INode,Some(dir)) => "("+getEdges(node).filter{e=> !(e same dir)}.map{e=>toString(e from n)}.mkString(",")+")"
-    case (leaf:Leaf,_) => leaf.name
-   }}
-
-  def toString(edge:Edge):String = toString(edge.right,Some(edge)) + ":" + edge.dist
-
-  def differences(t2:Tree):Seq[Edge]={
-    if (t2 eq this){
-      List()
-    }else {
-      edges.filter{e=> ! (t2 hasEdge e)}
-    }
-  }
-
-}
-

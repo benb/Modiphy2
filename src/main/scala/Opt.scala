@@ -1,5 +1,6 @@
 package modiphy.opt
 import modiphy.tree._
+import modiphy.calc._
 import modiphy.alignment._
 import modiphy.model._
 

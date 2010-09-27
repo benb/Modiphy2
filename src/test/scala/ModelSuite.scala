@@ -5,6 +5,7 @@ import modiphy.model._
 import modiphy.tree._
 import modiphy.math.constants._
 import modiphy.opt._
+import modiphy.calc._
 import modiphy.math.EnhancedMatrix._
 import ModelData._
 import modiphy.model.Types._

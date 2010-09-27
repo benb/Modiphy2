@@ -11,7 +11,7 @@ import Types._
 trait Exp{
   def realExp = this
   def apply(bl:Double,rate:Double=1.0)=expInt(bl*rate)
-  lazy val expInt:Memo[Double,LinearMatrix]=Memo[Double,LinearSeq[LinearSeq[Double]]]({bl=>
+  lazy val expInt:Memo[Double,LinearSeq[LinearSeq[Double]]]=Memo[Double,LinearSeq[LinearSeq[Double]]]({bl=>
     exp(bl)
   })
   def exp(bl:Double):LinearSeq[LinearSeq[Double]]

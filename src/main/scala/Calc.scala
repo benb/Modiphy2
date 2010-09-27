@@ -1,4 +1,5 @@
-package modiphy.tree
+package modiphy.calc
+import modiphy.tree._
 import scala.collection.immutable.Map.WithDefault
 import modiphy.alignment._
 import modiphy.model._
@@ -7,17 +8,23 @@ import scala.collection.LinearSeq
 
 import modiphy.opt._
 
+object Parallel{
+  var on = true
+  import jsr166y._
+  lazy val forkJoinPool = new ForkJoinPool
+  lazy val threshold = -1
+}
+
 object LikelihoodTypes{
   type Pattern=Int=>Letter
   type PartialLikelihoods = LinearSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
-  type Matrix = LinearSeq[LinearSeq[Double]]
 }
 import LikelihoodTypes._
 
 object SimpleLikelihoodCalc{
-  type Cache=Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]
+  type Cache=Map[Node,Map[Seq[Letter],PartialLikelihoods]]
 }
 
 trait LikelihoodFactory{
@@ -132,15 +139,7 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.setOptParam(p,vec,paramIndex))}
 }
 
-/*
-trait CachingLikelihoodCalc[A <: Model] extends LikelihoodCalc[A]{
-   val partialLikelihoodCache:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=new modiphy.util.ArrayMemo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({treePos=>treePos.id},tree.maxID)({ treePos => realPartialLikelihoodCalc(treePos)})
-   override def partialLikelihoods(treePos:RootedTreePosition)=partialLikelihoodCache(treePos)  
-   def tree:Tree
-   def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
-}*/
 trait LikelihoodCalc[A <: Model]{
-//   def partialLikelihoods(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]
    def updated(t:Tree):LikelihoodCalc[A]
    def updated(m:A):LikelihoodCalc[A]
    def logLikelihood:Double
@@ -172,53 +171,48 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
    def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.updatedVec(p,vec,paramIndex)) }
    def updatedSingle(p:SingleParamName,d:Double,paramIndex:ParamMatcher)={ updated(m.updatedSingle(p,d,paramIndex)) }
    def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher)={ updated(m.updatedMat(p,mat,paramIndex)) }
-  def realPartialLikelihoodCalc(treePos:RootedTreePosition):LinearSeq[PartialLikelihoods]={
+  def realPartialLikelihoodCalc(treePos:Node):LinearSeq[PartialLikelihoods]={
     val p = aln.patternList
-       (treePos,treePos.get) match {
-          case (myTP:TreePositionDir,n:INode)=>
+       treePos match {
+          case iNode:SubTree=>
            partialLikelihoodCalc(
-            combinePartialLikelihoods(treePos.children.toList.map{realPartialLikelihoodCalc}
-           ),m(myTP.upEdge))
-          case (myTP:RootedTreePosition,n:INode)=>
-            combinePartialLikelihoods(treePos.children.toList.map{realPartialLikelihoodCalc})
-          case (myTP:TreePositionDir,l:Leaf)=>   
+            combinePartialLikelihoods(iNode.children.toList.map{realPartialLikelihoodCalc}
+           ),m(tree,iNode))
+          case root:Root=>
+            combinePartialLikelihoods(root.children.toList.map{realPartialLikelihoodCalc})
+          case l:Leaf=>   
           partialLikelihoodCalc(
             p.map{p2=>
-              leafPartialLikelihoods(p2(aln.seqId(l.id.get)))},
-              m(myTP.upEdge)
+              leafPartialLikelihoods(p2(aln.seqId(l.name)))},
+              m(tree,l)
             )
         }
     }
 
 
 
-    import scalaz._
-    import Scalaz._
+    import scalaz.Scalaz._
 
-//   val partialLikelihoods = mutableHashMapMemo(realPartialLikelihoodCalc)
-//   val partialLikelihoods:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({ treePos => realPartialLikelihoodCalc(treePos)})
-//   val partialLikelihoods:modiphy.util.Memo[RootedTreePosition,LinearSeq[PartialLikelihoods]]=new modiphy.util.ArrayMemo[RootedTreePosition,LinearSeq[PartialLikelihoods]]({treePos=>treePos.id},tree.maxID)({ treePos => realPartialLikelihoodCalc(treePos)})
-    
-    def partialLikelihoods(treePos:RootedTreePosition)={
+    def partialLikelihoods(treePos:Node)={
       Parallel.on match {
         case true => parallelPartialLikelihoods(treePos)
         case false => realPartialLikelihoodCalc(treePos)
       }
     }
-    def parallelPartialLikelihoods(treePos:RootedTreePosition)={
+    def parallelPartialLikelihoods(treePos:Node)={
       import jsr166y._
       import Parallel._
       val p = aln.patternList
-      class Calc(treePos:RootedTreePosition) extends RecursiveTask[LinearSeq[PartialLikelihoods]]{
+      class Calc(treePos:Node) extends RecursiveTask[LinearSeq[PartialLikelihoods]]{
         def compute():LinearSeq[PartialLikelihoods]={
-          (treePos,treePos.get) match {
-            case (tp:TreePositionDir,n:INode)=>
-                val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
-                partialLikelihoodCalc( combinePartialLikelihoods(childCalc.map{_.join}) , m(tp.upEdge) )
-            case (tp:RootedTreePosition,n:INode)=>
-              val childCalc = treePos.children.toList.map{new Calc(_)}.map{_.fork}
+          treePos match {
+            case sub:SubTree=>
+                val childCalc = sub.children.toList.map{new Calc(_)}.map{_.fork}
+                partialLikelihoodCalc( combinePartialLikelihoods(childCalc.map{_.join}) , m(tree,sub) )
+            case root:Root=>
+              val childCalc = root.children.toList.map{new Calc(_)}.map{_.fork}
               combinePartialLikelihoods( childCalc.map{_.join})
-            case (tp:TreePositionDir,l:Leaf)=> partialLikelihoodCalc(allLeafPartialLikelihoods(p,l),m(tp.upEdge))
+            case l:Leaf=> partialLikelihoodCalc(allLeafPartialLikelihoods(p,l),m(tree,l))
           }
         }
       }
@@ -228,12 +222,12 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
     }
 
 
-  def likelihoods(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):LinearSeq[Double]={
-    finalLikelihood(partialLikelihoods(root),m.pi(root.get))
+  def likelihoods(root:Root=tree.root):LinearSeq[Double]={
+    finalLikelihood(partialLikelihoods(root),m.pi)
   }
   def likelihoods = likelihoods()
 
-  def logLikelihoodRoot(root:RootedTreePosition=tree.traverseDown(tree.defaultRoot)):Double={
+  def logLikelihoodRoot(root:Root=tree.root):Double={
     likelihoods(root).zip(aln.countList).map{t=>math.log(t._1)*t._2}.reduceLeft{_+_}
   }
   lazy val logLikelihood:Double={
@@ -250,7 +244,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
     case a if (a.isReal) => realCache(l.id)
     case a => emptyCache
   }}
-  def allLeafPartialLikelihoods(p:List[Pattern],l:Leaf)={val seqId =aln.seqId(l.id.get); p.map{p2=>leafPartialLikelihoods(p2(seqId))}}
+  def allLeafPartialLikelihoods(p:List[Pattern],l:Leaf)={val seqId =aln.seqId(l.name); p.map{p2=>leafPartialLikelihoods(p2(seqId))}}
 
   /*
   val allLeafPartialLikelihoods=immutableHashMapMemo{t:(List[Pattern],Leaf)=> val (p,l)=t
@@ -259,9 +253,9 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
   }*/
 
 
-  def factory(t:modiphy.tree.Tree,m:Model,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
+  def factory(t:Tree,m:Model,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
 
-  def updated(t:modiphy.tree.Tree)={
+  def updated(t:Tree)={
     /*
     val updatedCache = tree.differences(t).foldLeft(cache){(c2,e)=>
         c2.keys.foldLeft(c2){(map,tp)=> 
@@ -276,13 +270,13 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
   }
 
   def updated(m:Model)={
-    factory(tree,m,aln)//,Map[RootedTreePosition,Map[Seq[Letter],PartialLikelihoods]]())
+    factory(tree,m,aln)
   }
 }
 
 trait LikelihoodEngine{
   def combinePartialLikelihoods(intermediates:LinearSeq[LinearSeq[PartialLikelihoods]]):LinearSeq[PartialLikelihoods]
-  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix):LinearSeq[PartialLikelihoods]    
+  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:LinearSeq[LinearSeq[Double]]):LinearSeq[PartialLikelihoods]    
   def finalLikelihood(partial:LinearSeq[PartialLikelihoods],pi:IndexedSeq[Double]):LinearSeq[Likelihood]
 }
 class ColtLikelihoodCalc extends LikelihoodEngine{
@@ -300,7 +294,7 @@ class ColtLikelihoodCalc extends LikelihoodEngine{
     }
     coltCombinePartialLikelihoods(myInter).map{Vec2Seq}
   }
-  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix)={
+  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:LinearSeq[LinearSeq[Double]])={
     coltPartialLikelihoodCalc(end.map(Seq2Vec),matrix).map{Vec2Seq}
   }
   def finalLikelihood(partial:LinearSeq[PartialLikelihoods],pi:IndexedSeq[Double])={
@@ -360,7 +354,7 @@ class IndexedSeqLikelihoodCalc extends LikelihoodEngine{
     ans
   }
   
-  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:Matrix)={
+  def partialLikelihoodCalc(end:LinearSeq[PartialLikelihoods],matrix:LinearSeq[LinearSeq[Double]])={
     new EnhancedMatrix(end) multipleDotProduct matrix
   }
 

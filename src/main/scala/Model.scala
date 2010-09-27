@@ -1,6 +1,7 @@
 package modiphy.model
 import modiphy.math.EnhancedMatrix._
 import modiphy.tree._
+import modiphy.calc._
 import modiphy.util._
 import scala.collection.LinearSeq
 import modiphy.opt._
@@ -9,7 +10,7 @@ import modiphy.math._
 
 object Types{
   type Matrix=IndexedSeq[IndexedSeq[Double]]
-  type LinearMatrix = LinearSeq[LinearSeq[Double]]
+  type LinearMatrix = scala.collection.immutable.LinearSeq[scala.collection.immutable.LinearSeq[Double]]
   type Parameters = Map[ParamName,IndexedSeq[Double]]
   type CalcCache = Map[Symbol,Any]
   val cleanCache = Map[Symbol,Any]()
@@ -49,11 +50,10 @@ trait Model{
   def pis:Seq[IndexedSeq[Double]]
   def pi:IndexedSeq[Double]
   def mat:Matrix
-  def pi(n:Node):IndexedSeq[Double]=pi
   val exp:Exp
   def priors:IndexedSeq[Double]
   def rate:Double
-  def apply(e:Edge)=exp(e.dist)
+  def apply(tree:Tree,node:NonRoot)=exp(tree.branchLength(node))
   def models:Seq[Model]=List(this)
   def add(m:Model,prior:Double,modelIndex:Int):Model
   def update(newParameters:(ParamName,ParamMatcher,IndexedSeq[Double])*):Model
@@ -213,7 +213,6 @@ trait UsefulModelUtil extends Model{
   def modelIndex:Int
   def rate = parameters viewParam Rate
   var cache:CalcCache
-  override def apply(e:Edge)=exp(e.dist)
 
   
   def update(newParameters:(ParamName,ParamMatcher,IndexedSeq[Double])*):Model

@@ -94,7 +94,8 @@ case class Root(children:Set[NonRoot]) extends Node{
     ans
   }
 
-  def allMySubTrees:Set[NonRoot] = children.flatMap{_.allMySubTrees} ++ children
+  lazy val allMySubTrees:Set[NonRoot] = children.flatMap{_.allMySubTrees} ++ children
+  def leaves=allMySubTrees.flatMap{case l:Leaf=>List(l); case _ => Nil}
   /*
    Seq of all possible SubTrees from all possible rootings
   */
@@ -213,9 +214,17 @@ case class Tree(root:Root,bl:IndexedSeq[Double]){
 
     Tree(newRoot, newBLMap.sortBy(_._1).map{_._2})
   }
+  def restrictTo(s:Seq[String])={
+    val leaves = root.leaves
+    val set = s.map{Leaf(_)}.toSet
+    leaves.filterNot(set.contains).foldLeft(this){(tree,leaf)=> tree.drop(leaf)}
+  }
 }
 object Tree{
   def apply(newick:String):Tree = {
     new TreeParser{def parseAll=parse(tree,newick)}.parseAll.get
+  }
+  def apply(f:java.io.File):Tree = {
+    apply(scala.io.Source.fromFile(f).mkString)
   }
 }

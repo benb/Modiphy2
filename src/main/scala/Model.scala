@@ -250,9 +250,11 @@ trait UsefulWrappedModel extends UsefulModelUtil{
   def factory(parameters:Parameters,models:Seq[Model],cache:CalcCache):UsefulWrappedModel
   override def update(myNewP:(ParamName,ParamMatcher,IndexedSeq[Double])*):Model={
     val newParameters = myNewP.filter{t=>appliesToMe(t._1,t._2)}.map{t=>(t._1,t._3)}
-    val special = newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
+
+   
+    val special = if (myNewP==newParameters) {newParameters.foldLeft[Option[Model]](Some(this)){(optM,p)=>
       if (optM.isEmpty){None}else {optM.get.specialUpdate(p)}     
-    }
+    }}else {None}
     special.getOrElse{
       val newModels = wrapped.map{_.update(myNewP:_*)}
 
@@ -337,7 +339,7 @@ trait UsefulMixtureModel extends UsefulWrappedModel{
     super.toString + ":\n" + 
     parameters.map{t=>
       t._1 + " " + t._1.getReal(t._2) + "\n" 
-    } + "SubModels (\n" + subModels.map{_.toString.lines.map{x=> "  " + x}.mkString("\n")}.mkString("\n") + "\n)" + 
+    } + "SubModels (\n" + models.map{_.toString.lines.map{x=> "  " + x}.mkString("\n")}.mkString("\n") + "\n)" + 
     "---\n"
   }
  
@@ -451,7 +453,7 @@ class InvarLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cach
 object GammaModel{
   def apply(piValues:IndexedSeq[Double],s:IndexedSeq[IndexedSeq[Double]],alpha:Double,numCat:Int,myParamIndex:Int=0,rate:Double=1.0):GammaModel={
     new GammaModel(
-      (Pi << piValues) :: (S << s) :: (Gamma << alpha) :: (Rate << rate) :: Nil,
+      List[(ParamName,IndexedSeq[Double])]((Pi << piValues),(S << s),(Gamma << alpha),(Rate << rate)),
       myParamIndex,
       cleanCache,
       numCat

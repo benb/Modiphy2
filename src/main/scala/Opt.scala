@@ -4,27 +4,38 @@ import modiphy.calc._
 import modiphy.alignment._
 import modiphy.model._
 
-trait ParamName{
+sealed trait ParamName{
   def apply(i:Int)=(this,i)
   def lower(i:Int):Double
   def upper(i:Int):Double 
   def getReal(v:IndexedSeq[Double]):Any
+  def from(o:OptModel[_]):Option[Any] = {o(this) match {
+    case None => None
+    case Some(ans) => Some(getReal(ans))
+  }}
+}
+trait TypedParamName[A] extends ParamName{
+  def getReal(v:IndexedSeq[Double]):A
+  override def from(o:OptModel[_]):Option[A] = {o(this) match {
+    case None => None
+    case Some(ans) => Some(getReal(ans))
+  }}
 }
 case class VectorParamWrapper(s:SingleParamName) extends VectorParamName{
   def lower(i:Int)=s.lower(i)
   def upper(i:Int)=s.upper(i)
 }
-trait SingleParamName extends ParamName{
+trait SingleParamName extends TypedParamName[Double]{
   def getOpt(v:Double)=Vector(v)
   def getReal(v:IndexedSeq[Double])=v(0)
   def <<(v:Double)=(this,getOpt(v))
 }
-trait VectorParamName extends ParamName{
+trait VectorParamName extends TypedParamName[IndexedSeq[Double]]{
   def getOpt(v:IndexedSeq[Double])=v
   def getReal(v:IndexedSeq[Double])=v
   def <<(v:IndexedSeq[Double])=(this,getOpt(v))
 }
-trait MatrixParamName extends ParamName{
+trait MatrixParamName extends TypedParamName[IndexedSeq[IndexedSeq[Double]]]{
   def getOpt(v:IndexedSeq[IndexedSeq[Double]]):IndexedSeq[Double]
   def getReal(v:IndexedSeq[Double]):IndexedSeq[IndexedSeq[Double]]
   def <<(v:IndexedSeq[IndexedSeq[Double]])=(this,getOpt(v))
@@ -115,6 +126,11 @@ case class MatchSet(s:IndexedSeq[Int]) extends NumParamMatcher{
   def params = s
 }
 
+object MatchSet{
+  def apply(l:Int*):MatchSet={
+    MatchSet(l.toIndexedSeq)
+  }
+}
 
 class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
   def m = calc.model
@@ -242,7 +258,7 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
         def evaluate(p:Double)={
           setOptParam(paramName,Vector(p),paramIndex)
           val ans = logLikelihood
-          println(p + " " + ans)
+          println("OPT " + p + " " + ans)
           -ans
         }
       }

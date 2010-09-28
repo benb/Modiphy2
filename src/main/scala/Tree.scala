@@ -11,6 +11,7 @@ sealed trait NonRoot extends Node{
   def toRoot(n:NonRoot):Option[Root]
   def branchLengthString(bl:NonRoot=>Double):String
   def drop(sub:NonRoot):NonRoot
+  def leaves:Set[Leaf]
 }
 class Split(val left:NonRoot,val right:NonRoot) extends Ordered[Split]{
   override def equals(other:Any)= other match {
@@ -19,11 +20,14 @@ class Split(val left:NonRoot,val right:NonRoot) extends Ordered[Split]{
     case _ => false
   }
   override def toString = "Split( " + left + " , " + right + ")"
+  lazy val topNode = (left.leaves ++ right.leaves).toList.sortBy{_.toString}.head
+  lazy val index = {
+    val side = if (left.leaves contains topNode){left}else{right}
+    side.leaves.map{_.toString}.toList.sorted.mkString(",")
+  }
+
   def compare(that:Split)={
-    val a = if (left.toString < right.toString){left.toString}else{right.toString}
-    a.compare{
-      if (that.left.toString < that.right.toString){that.left.toString}else{that.right.toString}
-    }
+    index compare that.index
   }
   override def hashCode = (left.hashCode + right.hashCode) * 43
   /*
@@ -76,6 +80,7 @@ case class SubTree(children:Set[NonRoot]) extends NonRoot{
    }
   def numNodes = 1 + children.foldLeft(0){_+_.numNodes}
   def numLeaves = children.foldLeft(0){_+_.numLeaves}
+  def leaves = children.map{_.leaves}.reduceLeft(_++_)
 
 }
 object Root{
@@ -120,6 +125,7 @@ case class Root(children:Set[NonRoot]) extends Node{
   def reRoot(anySub:NonRoot):Root={ allRootedTrees.find{root=> root.children.contains(anySub)}.get }
   override def toString="(" + children.mkString(",") + ");"
   def branchLengthString(blSeq:IndexedSeq[Double]):String={
+    assert(blSeq.length==allSplits.length)
     branchLengthString(allSplits.map{_.left}.zip(blSeq).toMap ++ allSplits.map{_.right}.zip(blSeq))
   }
   def branchLengthString(bl:Map[NonRoot,Double]):String={
@@ -137,7 +143,12 @@ case class Root(children:Set[NonRoot]) extends Node{
          }
        }
      }
-     Root(newChildren)
+     if (newChildren.size > 2){
+       Root(newChildren)
+     }else {
+       val collapseNode = newChildren.find(node => node.isInstanceOf[SubTree]).get.asInstanceOf[SubTree]
+       Root((newChildren - collapseNode) ++ collapseNode.children)
+     }
   }
   def numNodes = 1 + children.foldLeft(0){_+_.numNodes}
   def numLeaves = children.foldLeft(0){_+_.numLeaves}
@@ -154,6 +165,7 @@ case class Leaf(name:String) extends NonRoot{
   def drop(sub:NonRoot)=this
   def numNodes=1
   def numLeaves=1
+  def leaves = Set(this)
 }
 
 object TreeTest{
@@ -185,8 +197,8 @@ case class Tree(root:Root,bl:IndexedSeq[Double]){
       }else {
         m
       }
-    }.toIndexedSeq
-    val newBl2 = newBl.sortBy{_._1}.map{_._2}
+    }.toList
+    val newBl2 = newRoot.allSplits.map{s1=>newBl.find{t=>s1.compatible(t._1)}.get}.map{_._2}
     Tree(newRoot,newBl2)
   }
   def drop(s:String):Tree={
@@ -208,9 +220,6 @@ case class Tree(root:Root,bl:IndexedSeq[Double]){
     val newRoot = Root(left.children + right)
     val blMap = root.allSplits.zip(bl).toMap 
     val newBLMap = (blMap.updated(root.split(right),blMap(root.split(right))+blMap(root.split(left))) - root.split(left)).toIndexedSeq
-
-    println(blMap)
-    println(newBLMap)
 
     Tree(newRoot, newBLMap.sortBy(_._1).map{_._2})
   }

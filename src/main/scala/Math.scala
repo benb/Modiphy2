@@ -49,6 +49,7 @@ object EnhancedIndexedMatrix{
   }
 }
 object EnhancedLinearMatrix{
+
   def eye(n:Int)={
     List.tabulate(n,n){(i,j) => if (j==i)(1.0)else{0.0}}
   }
@@ -60,6 +61,10 @@ object EnhancedLinearMatrix{
 
 class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
   import EnhancedMatrix._
+  def prettyString={
+    mat.map{_.prettyString}.mkString("\n")
+  }
+
   def sToQ(pi:IndexedSeq[Double],rate:Double=1.0)={
     //fixme
     List.tabulate(mat.length,mat.head.length){(i,j)=>
@@ -110,7 +115,15 @@ class EnhancedMatrix(mat:LinearSeq[LinearSeq[Double]]){
       dotAll(e,mat2)
     }
   }
-
+  def t = {
+    val iter = mat.map{_.iterator}
+    var ans = List[List[Double]]()
+    while (iter.head.hasNext){
+      ans = iter.map{_.next}.toList :: ans
+    }
+    ans.reverse
+  }
+  
 }
 trait EnhancedVector[A <: Seq[Double]]{
   def normalise:A
@@ -118,9 +131,21 @@ trait EnhancedVector[A <: Seq[Double]]{
   def sum:Double
   def dotProduct(other:LinearSeq[Double]):Double
   def prod(other:Seq[Double]):A
-  
+  protected def seq:Seq[Double]
+  def prettyString={
+    import java.text.DecimalFormat
+    val format = new DecimalFormat("0.000000")
+
+      seq.map{d=>
+        d match {
+          case 0.0 => " 0.0     "
+          case num if (num>0.0) => " " + format.format(num)
+          case num => format.format(num)
+        }
+      }.mkString(" ")
+  } 
 }
-class EnhancedIndexedVector(seq:IndexedSeq[Double]) extends EnhancedVector[IndexedSeq[Double]]{
+class EnhancedIndexedVector(val seq:IndexedSeq[Double]) extends EnhancedVector[IndexedSeq[Double]]{
   def normalise = {
     val mySum = sum
     seq.map{i=> i/sum}
@@ -134,20 +159,8 @@ class EnhancedIndexedVector(seq:IndexedSeq[Double]) extends EnhancedVector[Index
   def prod(vect:Seq[Double])={
     seq.zip(vect).map{t=>t._1*t._2}
   }
-  def prettyString={
-    import java.text.DecimalFormat
-    val format = new DecimalFormat("0.000000")
-
-      seq.map{d=>
-        d match {
-          case 0.0 => " 0.0     "
-          case num if (num>0.0) => " " + format.format(num)
-          case num => format.format(num)
-        }
-      }.mkString(" ")
-  }
 }
-class EnhancedListVector(seq:LinearSeq[Double]) extends EnhancedVector[LinearSeq[Double]]{
+class EnhancedListVector(val seq:LinearSeq[Double]) extends EnhancedVector[LinearSeq[Double]]{
   def normalise = {
     val mySum = sum
     seq.map{i=> i/sum}

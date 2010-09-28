@@ -20,6 +20,16 @@ class ModelSuite extends FunSuite {
     WAG.S.head.length should be (20)
   }
 
+  test("appliesTo"){
+    val model = new BasicLikelihoodModel(List(Pi << WAG.pi,S << WAG.S,Rate << 1.0),2)
+    model.appliesToMe(Pi,MatchP(2)) should be (true)
+    model.appliesToMe(Pi,MatchP(1)) should be (false)
+    model.appliesToMe(Pi,MatchSet(0,1)) should be (false)
+    model.appliesToMe(Pi,MatchSet(2,3)) should be (true)
+    model.appliesToMe(S,MatchAll) should be (true)
+    model.appliesToMe(Gamma,MatchAll) should be (false)
+  }
+
   test("log likelihood of basic model should match PAML") {
     val model = BasicLikelihoodModel(WAG.pi,WAG.S)
     val tree = Tree(treeStr)
@@ -51,6 +61,20 @@ class ModelSuite extends FunSuite {
 
     val lkl = new MixtureLikelihoodCalc(tree,aln,model)
     lkl.logLikelihood should be (-5808.929978 plusOrMinus 0.001)
+    val cmp = lkl.componentLikelihoods.asInstanceOf[List[List[Double]]]// should work
+    cmp.length should be (4)
+    cmp.reduceLeft{(a,b)=>
+      a.length should be (b.length)
+      a
+    }
+
+    val flt = lkl.flatComponentLikelihoods
+    flt.length should be (4)
+    flt.reduceLeft{(a,b)=>
+      a.length should be (b.length)
+      a
+    }
+    println(lkl.flatComponentLikelihoods.map{_.length})
     val lkl2 = new MixtureLikelihoodCalc(tree,aln,modelF)
     lkl2.logLikelihood should be (-5810.399586 plusOrMinus 0.001)
   }

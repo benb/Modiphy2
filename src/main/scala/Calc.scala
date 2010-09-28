@@ -77,7 +77,7 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
 
     It is intended to use pattern matching to extract the A's
   */
-  lazy val componentLikelihoods:List[_] = {
+  lazy val componentLikelihoods:List[List[_]] = {
     def scale(prior:Double,seq:List[_]):List[_]={
       seq.map{sub=>sub match {
         case d:Double=>{d*prior}
@@ -87,16 +87,16 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
     lklCalc.zip(priors).map{t=> scale(t._2,t._1.componentLikelihoods) }.toList
   }
   lazy val flatComponentLikelihoods:List[List[Double]]={
-    def flatten(ans:List[List[Double]],in:List[_]):List[List[Double]]={
+    def flatten(ans:List[List[Double]],in:List[List[_]]):List[List[Double]]={
       in match {
-        case Nil => ans.reverse
-        case s => s.head match {
-          case s2:List[_] => flatten(flatten(ans,s),in.tail)
-          case d:Double => flatten(s.asInstanceOf[List[Double]]::ans,s.tail)
+        case Nil => ans
+        case s => s.head.head match {
+          case s2:List[_] => flatten(flatten(ans,s.head.asInstanceOf[List[List[_]]]),s.tail)
+          case d:Double => flatten(s.head.asInstanceOf[List[Double]]::ans,s.tail)
         }
       }
     }
-    flatten(List(List[Double]()),componentLikelihoods)
+    flatten(Nil,componentLikelihoods).reverse
   }
   
   lazy val posteriors:Seq[Seq[Double]] = {
@@ -150,7 +150,8 @@ trait LikelihoodCalc[A <: Model]{
    def model:A
    def likelihoods:LinearSeq[Double]
    def posteriors:Seq[Seq[Double]]
-   def componentLikelihoods:List[_]
+   def componentLikelihoods:List[List[_]]
+   def flatComponentLikelihoods:LinearSeq[LinearSeq[Double]]
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[Model]{
   def this(tree:Tree,aln:Alignment,m:Model)=this(tree,m,aln)
@@ -163,7 +164,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
   val numClasses = m.numClasses
 
   
-  def componentLikelihoods=List(likelihoods)
+  def componentLikelihoods=List(likelihoods.toList)
     def posteriors=List(likelihoods.map{f=>1.0})
   def model=m
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.setOptParam(p,vec,paramIndex))}
@@ -189,6 +190,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
         }
     }
 
+   def flatComponentLikelihoods:LinearSeq[LinearSeq[Double]] = List(likelihoods) 
 
 
     import scalaz.Scalaz._

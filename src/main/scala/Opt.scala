@@ -132,7 +132,7 @@ object MatchSet{
   }
 }
 
-class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignment){
+class OptModel[A <: Model](var calc:LikelihoodCalc,var tree:Tree,aln:Alignment){
   def m = calc.model
   val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 
@@ -207,20 +207,21 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
   def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,MatchP(t._2))
   def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,MatchAll)
 
-  def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,MatchAll)})}
-  def optimise(list:(ParamName,ParamMatcher)*){optimiseSeq(list)}
-  def optimiseSeq(optParams:Seq[(ParamName,ParamMatcher)]){
-    val start = optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
+  import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}
+  trait ModiphyMultivariateFunction extends MultivariateFunction{
+    def getBestParam:Array[Double]
+  }
+  def getFunc(optParams:Seq[(ParamName,ParamMatcher)]):Either[UnivariateFunction,ModiphyMultivariateFunction]={
+  val start = optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
     val lengths = start.map{_.length}
     val startArray = start.flatten.toArray
     val numArguments = startArray.length
     println("Start " + startArray.toList)
 
-    import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}
     if (numArguments > 1){
       var bestlnL = -1E100
       var bestParam:Array[Double]=startArray
-      val func = new MultivariateFunction{
+      val func = new ModiphyMultivariateFunction{
         val lowerBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.lower(i)}}.flatten
         val upperBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.upper(i)}}.flatten
 
@@ -246,10 +247,9 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
             -ans
           }
         }
+        def getBestParam = bestParam
       }
-      val search = new ConjugateDirectionSearch
-      search.optimize(func,startArray,1E-4,1E-3)
-      println("Best " + bestParam.toList + " " + func.evaluate(bestParam))
+      Right(func)
     }else {
       val func = new UnivariateFunction{
         val (paramName,paramIndex) = optParams.head
@@ -262,14 +262,33 @@ class OptModel[A <: Model](var calc:LikelihoodCalc[A],var tree:Tree,aln:Alignmen
           -ans
         }
       }
-      val search = new UnivariateMinimum
-      val finalP = search.optimize(startArray(0),func,1E-4)
-      func evaluate finalP
+      Left(func)
     }
   }
+
+  
+  def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,MatchAll)})}
+  def optimise(list:(ParamName,ParamMatcher)*){optimiseSeq(list)}
+  def optimiseSeq(optParams:Seq[(ParamName,ParamMatcher)]){
+    val eitherFunc = getFunc(optParams)
+    val start = optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
+    val startArray = start.flatten.toArray
+    eitherFunc match {
+      case Left(func)=>
+        val search = new UnivariateMinimum
+        val finalP = search.optimize(startArray(0),func,1E-4)
+        func evaluate finalP
+      case Right(func) => 
+        val search = new ConjugateDirectionSearch
+        search.optimize(func,startArray,1E-4,1E-3)
+        println("Best " + func.getBestParam.toList + " " + func.evaluate(func.getBestParam))
+    }
+
+      
+  }
+
+
 }
-
-
 
 
 

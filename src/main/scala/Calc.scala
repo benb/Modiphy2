@@ -11,8 +11,14 @@ import modiphy.opt._
 object Parallel{
   var on = true
   import jsr166y._
-  lazy val forkJoinPool = new ForkJoinPool
+  var forkJoinPool = new ForkJoinPool
   lazy val threshold = -1
+  private[this] var nt=0
+  def numThreads_=(nT:Int){
+    nt=nT
+    forkJoinPool = new ForkJoinPool(nT)
+  }
+  def numThreads=nt
 }
 
 object LikelihoodTypes{
@@ -42,7 +48,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
   def apply=new IndexedSeqLikelihoodCalc
 }
 
-class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc[Model]]]=None) extends LikelihoodCalc[Model]{
+class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc]]=None) extends LikelihoodCalc{
   def priors = m.priors
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{_.likelihoodCalc(tree,aln)}}
@@ -50,7 +56,7 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
   lazy val subLikelihoods  = {
     val myLikelihoods = if (Parallel.on && aln.patternLength > 1000){
       import jsr166y._
-      class Calc(subModels:List[(LikelihoodCalc[Model],Double)]) extends RecursiveTask[Seq[Seq[Double]]]{
+      class Calc(subModels:List[(LikelihoodCalc,Double)]) extends RecursiveTask[Seq[Seq[Double]]]{
         def compute = {
           subModels match {
             case model::Nil => subModels.map{t=> t._1.likelihoods.map{_ * t._2}}
@@ -139,21 +145,21 @@ class MixtureLikelihoodCalc(tree:Tree,aln:Alignment,m:Model,lkl:Option[Seq[Likel
   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher)={ updated(m.setOptParam(p,vec,paramIndex))}
 }
 
-trait LikelihoodCalc[A <: Model]{
-   def updated(t:Tree):LikelihoodCalc[A]
-   def updated(m:A):LikelihoodCalc[A]
+trait LikelihoodCalc{
+   def updated(t:Tree):LikelihoodCalc
+   def updated(m:Model):LikelihoodCalc
    def logLikelihood:Double
-   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc[A]
-   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher):LikelihoodCalc[A]
-   def updatedSingle(p:SingleParamName,d:Double,paramIndex:ParamMatcher):LikelihoodCalc[A]
-   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc[A]
-   def model:A
+   def updatedVec(p:VectorParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc
+   def updatedMat(p:MatrixParamName,mat:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher):LikelihoodCalc
+   def updatedSingle(p:SingleParamName,d:Double,paramIndex:ParamMatcher):LikelihoodCalc
+   def setOptParam(p:ParamName,vec:IndexedSeq[Double],paramIndex:ParamMatcher):LikelihoodCalc
+   def model:Model
    def likelihoods:LinearSeq[Double]
    def posteriors:Seq[Seq[Double]]
    def componentLikelihoods:List[List[_]]
    def flatComponentLikelihoods:LinearSeq[LinearSeq[Double]]
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc[Model]{
+class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
   def this(tree:Tree,aln:Alignment,m:Model)=this(tree,m,aln)
   import SimpleLikelihoodCalc._
   

@@ -33,7 +33,7 @@ class ParametersWrapper(par:Parameters){
  large rate matrix. 
 */
 trait Model{
-  def likelihoodCalc(t:Tree,aln:Alignment):LikelihoodCalc[Model]
+  def likelihoodCalc(t:Tree,aln:Alignment):LikelihoodCalc
   def applies(p:ParamName,pM:ParamMatcher):Boolean
   def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]]={case _ => None}
   def params:scala.collection.Set[ParamName]

@@ -132,7 +132,106 @@ object MatchSet{
   }
 }
 
-class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment){
+class JointOptModel(l:IndexedSeq[OptModel]) extends Optimizable{
+
+  val blIndices=l.map{_.tree.getBranchLengths.length}.take(l.length-1).foldLeft(List[Int](0)){(l,d)=>(l.head+d)::l}
+  println("DEBUG blIndices" + blIndices)
+  assert(blIndices.length == l.length)
+  val blMap:Map[Int,(Int,OptModel)] = blIndices.foldLeft((Map[Int,(Int,OptModel)](),0)){(t,index)=> val (m,last)=t
+    val m2 = (last until index).foldLeft(m){(m2,i)=>
+      m.updated(i,((i-last),l(index)))
+    }
+    (m2,index)
+  }._1
+
+  
+  def logLikelihood = l.map{_.logLikelihood}.reduceLeft(_+_)
+
+  def update(p:ParamName,d:Double){update(p,d,MatchAll)}
+  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,MatchAll)}
+  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,MatchAll)}
+  def update(p:ParamName,d:Double,paramIndex:ParamMatcher){
+    p match {
+      case BranchLengths => 
+        paramIndex match {
+          case MatchAll => cantHandle(p,d,paramIndex)
+          case MatchP(i) => val (i2,opt) = blMap(i); opt.update(p,d,MatchP(i2))
+          case MatchSet(s) => 
+            val s2 = s.map{blMap}
+            l.foreach{opt=>
+              val s3= s2.filter{t=> t._2==opt}.map{t=>t._1}
+              if (s3.size>0){
+                opt.update(p,d,MatchSet(s3))
+              }
+            }
+        }
+        case other => l.foreach{opt=> opt.update(p,d,paramIndex)}
+    }
+  }
+
+  def update(p:ParamName,value:IndexedSeq[Double],paramIndex:ParamMatcher){
+    p match {
+      case BranchLengths => 
+        paramIndex match {
+          case MatchAll => l.foreach{opt=> opt.update(p,value,paramIndex)}
+          case MatchP(i) => val (i2,opt) = blMap(i); opt.update(p,value,MatchP(i2))
+          case MatchSet(i)=> 
+            val s2 = i.map{blMap}
+            l.foreach{opt=>
+              val s3= s2.filter{t=> t._2==opt}.map{t=>t._1}
+              if (s3.size>0){
+                opt.update(p,value,MatchSet(s3))
+              } 
+            } 
+
+        }
+        case other => l.foreach{opt=> opt.update(other,value,paramIndex)}
+    }
+  }
+
+  def update(p:ParamName,value:IndexedSeq[IndexedSeq[Double]],paramIndex:ParamMatcher=MatchAll)(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){
+    p match {
+      case BranchLengths=> cantHandle(p,value,paramIndex)
+      case other => l.foreach{ opt => opt.update(other,value,paramIndex)}
+    }
+  }
+
+  def setOptParam(p:ParamName,value:IndexedSeq[Double],paramIndex:ParamMatcher){
+    p match {
+      case BranchLengths => update(BranchLengths,value,paramIndex)
+      case other => l.foreach{ opt => opt.update(other,value,paramIndex)}
+    }
+  }
+
+  def getOptParam(p:ParamName,paramIndex:ParamMatcher=MatchAll):Option[IndexedSeq[Double]]=(p,paramIndex) match {
+      case (BranchLengths,MatchAll) => {
+        Some(
+          l.map(_.getOptParam(p,paramIndex)).filterNot{_==None}.map{_.get}.flatten
+        )
+      }
+      case (BranchLengths,MatchP(i)) => 
+        val (i2,opt) = blMap(i); opt.getOptParam(BranchLengths,MatchP(i2))
+      case (BranchLengths,MatchSet(i)) => 
+        val s2 = i.map{blMap}
+        Some(
+        l.map{opt=>
+          val s3= s2.filter{t=> t._2==opt}.map{t=>t._1}
+          if (s3.size>0){
+            opt.getOptParam(p,MatchSet(s3))
+          }else {
+            None
+          }
+        }.filterNot{_==None}.map{_.get}.flatten
+        )
+      case _ => l.view.map{_.getOptParam(p,paramIndex)}.find(_!=None).getOrElse(None)
+    }
+def cantHandle(p:ParamName,a:Any,paramIndex:ParamMatcher){
+    println("Can't handle combination " + p + " " + paramIndex + " " + a)
+  }
+
+
+}
+class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment) extends Optimizable{
   def m = calc.model
   val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 
@@ -206,7 +305,12 @@ class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment){
 
   def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,MatchP(t._2))
   def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,MatchAll)
+}
+trait Optimizable{
 
+  def getOptParam(p:ParamName,paramIndex:ParamMatcher):Option[IndexedSeq[Double]]
+  def logLikelihood:Double
+  def setOptParam(p:ParamName,values:IndexedSeq[Double],paramIndex:ParamMatcher):Unit
   import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}
   trait ModiphyMultivariateFunction extends MultivariateFunction{
     def getBestParam:Array[Double]

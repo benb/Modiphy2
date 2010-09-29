@@ -9,14 +9,14 @@ sealed trait ParamName{
   def lower(i:Int):Double
   def upper(i:Int):Double 
   def getReal(v:IndexedSeq[Double]):Any
-  def from(o:OptModel[_]):Option[Any] = {o(this) match {
+  def from(o:OptModel):Option[Any] = {o(this) match {
     case None => None
     case Some(ans) => Some(getReal(ans))
   }}
 }
 trait TypedParamName[A] extends ParamName{
   def getReal(v:IndexedSeq[Double]):A
-  override def from(o:OptModel[_]):Option[A] = {o(this) match {
+  override def from(o:OptModel):Option[A] = {o(this) match {
     case None => None
     case Some(ans) => Some(getReal(ans))
   }}
@@ -132,7 +132,7 @@ object MatchSet{
   }
 }
 
-class OptModel[A <: Model](var calc:LikelihoodCalc,var tree:Tree,aln:Alignment){
+class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment){
   def m = calc.model
   val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 

@@ -9,14 +9,14 @@ sealed trait ParamName{
   def lower(i:Int):Double
   def upper(i:Int):Double 
   def getReal(v:IndexedSeq[Double]):Any
-  def from(o:OptModel):Option[Any] = {o(this) match {
+  def from(o:Optimizable):Option[Any] = {o(this) match {
     case None => None
     case Some(ans) => Some(getReal(ans))
   }}
 }
 trait TypedParamName[A] extends ParamName{
   def getReal(v:IndexedSeq[Double]):A
-  override def from(o:OptModel):Option[A] = {o(this) match {
+  override def from(o:Optimizable):Option[A] = {o(this) match {
     case None => None
     case Some(ans) => Some(getReal(ans))
   }}
@@ -132,17 +132,22 @@ object MatchSet{
   }
 }
 
-class JointOptModel(l:IndexedSeq[OptModel]) extends Optimizable{
+class JointOptModel(val l:IndexedSeq[OptModel]) extends Optimizable{
 
-  val blIndices=l.map{_.tree.getBranchLengths.length}.take(l.length-1).foldLeft(List[Int](0)){(l,d)=>(l.head+d)::l}
+  val numBL = l.map{_.tree.getBranchLengths.length}
+  val blIndices=numBL.take(l.length-1).foldLeft(List[Int](0)){(l,d)=>(l.head+d)::l}
   println("DEBUG blIndices" + blIndices)
   assert(blIndices.length == l.length)
+  var loc = 0
   val blMap:Map[Int,(Int,OptModel)] = blIndices.foldLeft((Map[Int,(Int,OptModel)](),0)){(t,index)=> val (m,last)=t
     val m2 = (last until index).foldLeft(m){(m2,i)=>
-      m.updated(i,((i-last),l(index)))
+      m.updated(i,((i-last),l(loc)))
     }
+    loc=loc+1
     (m2,index)
   }._1
+
+  def calcSeq = l.map{_.calcSeq}.flatten
 
   
   def logLikelihood = l.map{_.logLikelihood}.reduceLeft(_+_)
@@ -173,7 +178,11 @@ class JointOptModel(l:IndexedSeq[OptModel]) extends Optimizable{
     p match {
       case BranchLengths => 
         paramIndex match {
-          case MatchAll => l.foreach{opt=> opt.update(p,value,paramIndex)}
+          case MatchAll => {
+            val vIter = value.iterator
+            val newValues = numBL.map{i=> vIter.take(i).toIndexedSeq}
+            l.zip(newValues).foreach{t=> t._1.update(p,t._2,paramIndex)}
+          }
           case MatchP(i) => val (i2,opt) = blMap(i); opt.update(p,value,MatchP(i2))
           case MatchSet(i)=> 
             val s2 = i.map{blMap}
@@ -199,7 +208,9 @@ class JointOptModel(l:IndexedSeq[OptModel]) extends Optimizable{
   def setOptParam(p:ParamName,value:IndexedSeq[Double],paramIndex:ParamMatcher){
     p match {
       case BranchLengths => update(BranchLengths,value,paramIndex)
-      case other => l.foreach{ opt => opt.update(other,value,paramIndex)}
+      case other => l.foreach{ opt => 
+        opt.setOptParam(other,value,paramIndex)
+      }
     }
   }
 
@@ -229,9 +240,14 @@ def cantHandle(p:ParamName,a:Any,paramIndex:ParamMatcher){
     println("Can't handle combination " + p + " " + paramIndex + " " + a)
   }
 
+  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = l.view.map{_(t)}.find{_!=None}.getOrElse{None}
+  def apply(p:ParamName):Option[IndexedSeq[Double]] = l.view.map{_(p)}.find{_!=None}.getOrElse{None}
+
 
 }
 class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment) extends Optimizable{
+
+  def calcSeq=List(calc)
   def m = calc.model
   val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 
@@ -308,6 +324,9 @@ class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment) extends Opti
 }
 trait Optimizable{
 
+  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]]
+  def apply(p:ParamName):Option[IndexedSeq[Double]]
+  def calcSeq:Seq[LikelihoodCalc]
   def getOptParam(p:ParamName,paramIndex:ParamMatcher):Option[IndexedSeq[Double]]
   def logLikelihood:Double
   def setOptParam(p:ParamName,values:IndexedSeq[Double],paramIndex:ParamMatcher):Unit
@@ -321,6 +340,7 @@ trait Optimizable{
     val startArray = start.flatten.toArray
     val numArguments = startArray.length
     println("Start " + startArray.toList)
+    println("NumArg " + numArguments)
 
     if (numArguments > 1){
       var bestlnL = -1E100
@@ -355,6 +375,7 @@ trait Optimizable{
       }
       Right(func)
     }else {
+      println("Single Func")
       val func = new UnivariateFunction{
         val (paramName,paramIndex) = optParams.head
         val getLowerBound = paramName.lower(0)
@@ -379,10 +400,12 @@ trait Optimizable{
     val startArray = start.flatten.toArray
     eitherFunc match {
       case Left(func)=>
+        println("Opt single " + startArray(0))
         val search = new UnivariateMinimum
         val finalP = search.optimize(startArray(0),func,1E-4)
         func evaluate finalP
       case Right(func) => 
+        println("Opt multiple")
         val search = new ConjugateDirectionSearch
         search.optimize(func,startArray,1E-4,1E-3)
         println("Best " + func.getBestParam.toList + " " + func.evaluate(func.getBestParam))

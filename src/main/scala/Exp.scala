@@ -44,6 +44,9 @@ class ColtExp(mat:Matrix,rate:Double=1.0) extends Exp{
   lazy val d = eigen.getD
 
   def exp(bl:Double):LinearMatrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
+  override def toString = {
+    "Eigenvectors " + u + "\nEigenvalues" + d
+  }
 }
 class JBlasExp(m:Matrix) extends Exp{
   import org.jblas.{DoubleMatrix,Solve,MatrixFunctions}

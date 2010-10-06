@@ -45,7 +45,7 @@ class ColtExp(mat:Matrix,rate:Double=1.0) extends Exp{
 
   def exp(bl:Double):LinearMatrix=algebra.mult(algebra.mult(u,expVals(d,bl)),v) 
   override def toString = {
-    "Eigenvectors " + u + "\nEigenvalues" + d
+    "Left Eigenvectors " + u + "\nEigenvalues" + d  + "\nRight Eigenvectors " + v
   }
 }
 class JBlasExp(m:Matrix) extends Exp{

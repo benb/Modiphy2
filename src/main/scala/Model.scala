@@ -434,12 +434,12 @@ class InvarLikelihoodModel(val parameters:Parameters,val modelIndex:Int,var cach
   def this (piValues:IndexedSeq[Double],modelIndex:Int) = this(Map(Pi->Pi.getOpt(piValues)),modelIndex,cleanCache)
   def factory(p:Parameters,cache:CalcCache)=new InvarLikelihoodModel(p,modelIndex,cache)
   val cleanParams = Set[ParamName]()
-  lazy val pi = Pi.getReal(parameters(Pi))
+  def pi = Pi.getReal(parameters(Pi))
   override lazy val mat = getCache[Matrix]('Q, {() => EnhancedIndexedMatrix.zero(pi.length)})
   override def rate = 0.0
   override lazy val exp = getCache[Exp]('Exp,{ () => 
     new Exp{
-      val intExp = EnhancedLinearMatrix.eye(parameters(Pi).length + 1)
+      val intExp = EnhancedLinearMatrix.eye(pi.length)
       def exp(bl:Double)={
         intExp
       }  

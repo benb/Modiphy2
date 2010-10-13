@@ -62,6 +62,13 @@ trait Model{
     val inPi = pi.map{_/n}
     (0 until n).map{i=>inPi}.flatten
   }
+  def toXML = <model>
+  <name>
+    {this.getClass.toString}
+  </name>
+ </model>
+
+
 }
 
 trait StdModel extends Model{
@@ -71,12 +78,13 @@ trait StdModel extends Model{
   def priors=Vector(1.0)
   def mats=List(mat)
   def pis =List(pi)
-  /*
+   /*
   def u:Matrix
   def d:Vector
   def v:Matrix
   */
 }
+
 trait StdMixtureModel extends Model{
   def rateCorrection:Double
 }
@@ -184,6 +192,45 @@ object BasicLikelihoodModel{
 }
 
 trait UsefulModelUtil extends Model{
+
+  def dimension(d:Double):Int=0
+  def dimension(d:Seq[_]):Int = {
+    d.head match {
+      case s:Seq[_] => dimension(s)+1
+      case a:Any => 1
+    }
+  }
+  def formatParam(p:Double):String=p.toString
+  def formatParam(d:Seq[_]):String={
+    "[" + 
+    d.map{p=>
+      p match {
+        case d:Double=>formatParam(d)
+        case s:Seq[_]=>formatParam(s)
+      }
+    }.mkString(",") +"]"
+  }
+  override def toXML = <model name={this.getClass.toString}>
+    <index>
+      {modelIndex}
+    </index>
+    <parameters>
+      {parameters.map{t=> val (name,value) = t
+        val pVal = name getReal value
+        val (dim:Int,valstr) = pVal match {
+          case d:Double => (dimension(d),formatParam(d))
+          case s:Seq[_] => (dimension(s),formatParam(s))
+        }
+        <param name={name.toString} dimension={dim.toString}>
+          {valstr} 
+        </param>
+      }
+      }
+
+    </parameters>
+      
+  </model>
+
 
   def applies(p:ParamName,paramIndex:ParamMatcher):Boolean 
   def appliesToMe(p:ParamName,paramIndex:ParamMatcher):Boolean = {

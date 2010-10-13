@@ -48,7 +48,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
   def apply=new IndexedSeqLikelihoodCalc
 }
 
-class MixtureLikelihoodCalc(tree:Tree,val aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc]]=None) extends LikelihoodCalc{
+class MixtureLikelihoodCalc(val tree:Tree,val aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc]]=None) extends LikelihoodCalc{
   def priors = m.priors
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{_.likelihoodCalc(tree,aln)}}
@@ -159,6 +159,14 @@ trait LikelihoodCalc{
    def componentLikelihoods:List[List[_]]
    def flatComponentLikelihoods:LinearSeq[LinearSeq[Double]]
    def aln:Alignment
+   def tree:Tree
+   def toXML=
+     <calc>
+       <tree>
+         {tree.toString}
+       </tree>
+       {model.toXML}
+     </calc>
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
   def this(tree:Tree,aln:Alignment,m:Model)=this(tree,m,aln)

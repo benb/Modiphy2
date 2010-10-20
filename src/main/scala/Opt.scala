@@ -13,7 +13,16 @@ sealed trait ParamName{
     case None => None
     case Some(ans) => Some(getReal(ans))
   }}
+  def getRand(current:IndexedSeq[Double])={
+    import scala.util.Random._
+    current.zipWithIndex.map{ t=>
+      val l = lower(t._2)
+      val u = upper(t._2)
+      nextDouble() * (u-l) - l
+    }
+  }
 }
+
 trait TypedParamName[A] extends ParamName{
   def getReal(v:IndexedSeq[Double]):A
   override def from(o:Optimizable):Option[A] = {o(this) match {
@@ -62,10 +71,21 @@ trait PiParamName extends VectorParamName{
   }
   override def getOpt(d:IndexedSeq[Double])={
     val head=d.head
-    d.tail.map{i=>math.log(i/head)}
+    d.tail.map{i=>math.log(i/head)}.zipWithIndex.map{t=> val (i,c)=t
+      if (i < lower(c)){lower(c)}else if(i > upper(c)){upper(c)} else {i}
+    }
   }
   def lower(i:Int)= -10.0
   def upper(i:Int)=10.0
+  override def getRand(current:IndexedSeq[Double])={
+    import scala.util.Random._
+    import scala.math._
+    val ans = current.zipWithIndex.map{ t=>
+      nextDouble()
+    }.map{log}.map{_*(nextInt(2)*2-1)}
+    println("Rand Pi " + ans)
+    ans
+  }
 }
 case object S extends MatrixParamName{
   def lower(i:Int)=0.0
@@ -148,14 +168,14 @@ class JointOptModel(val l:IndexedSeq[OptModel]) extends Optimizable{
   }._1
 
   def calcSeq = l.map{_.calcSeq}.flatten
+  def toXML = <JointModel>
+  {l.zipWithIndex.map{t=> <model index={t._2.toString}>t._1.toXML</model>}}
+ </JointModel>
 
   
   def logLikelihood = l.map{_.logLikelihood}.reduceLeft(_+_)
 
-  def update(p:ParamName,d:Double){update(p,d,MatchAll)}
-  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,MatchAll)}
-  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,MatchAll)}
-  def update(p:ParamName,d:Double,paramIndex:ParamMatcher){
+ def update(p:ParamName,d:Double,paramIndex:ParamMatcher){
     p match {
       case BranchLengths => 
         paramIndex match {
@@ -252,10 +272,7 @@ class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment) extends Opti
   val myParams:List[(ParamName,Int)] ={ m.numberedParams ++ tree.getBranchLengths.zipWithIndex.map{t=>(BranchLengths,t._2)}}.toList
 
 
-  def update(p:ParamName,d:Double){update(p,d,MatchAll)}
-  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,MatchAll)}
-  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,MatchAll)}
-  def update(p:ParamName,d:Double,paramIndex:ParamMatcher){
+   def update(p:ParamName,d:Double,paramIndex:ParamMatcher){
     p match {
       case BranchLengths => 
         paramIndex match {
@@ -315,19 +332,33 @@ class OptModel(var calc:LikelihoodCalc,var tree:Tree,aln:Alignment) extends Opti
     println("Can't handle combination " + p + " " + paramIndex + " " + a)
   }
 
+  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,MatchP(t._2))
+  def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,MatchAll)
+  def toXML =  calc.toXML
+
+
+}
+trait Optimizable{
+
+  def update(p:ParamName,d:Double){update(p,d,MatchAll)}
+  def update(p:ParamName,d:IndexedSeq[Double]){update(p,d,MatchAll)}
+  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){update(p,d,MatchAll)}
+
   def update(t:(ParamName,Int), value:Double){ update(t._1,value,MatchP(t._2))}
   def update(t:(ParamName,Int), value:IndexedSeq[Double]){ update(t._1,value,MatchP(t._2))}
   def update(t:(ParamName,Int), value:IndexedSeq[IndexedSeq[Double]])(implicit m:Manifest[IndexedSeq[IndexedSeq[Double]]]){ update(t._1,value,MatchP(t._2))}
+  def update(p:ParamName,d:IndexedSeq[Double],m:ParamMatcher):Unit
+  def update(p:ParamName,d:Double,m:ParamMatcher):Unit
+  def update(p:ParamName,d:IndexedSeq[IndexedSeq[Double]],m:ParamMatcher)(implicit man:Manifest[IndexedSeq[IndexedSeq[Double]]]):Unit
 
-  def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]] = m.getOptParam(t._1,MatchP(t._2))
-  def apply(p:ParamName):Option[IndexedSeq[Double]]=m.getOptParam(p,MatchAll)
-}
-trait Optimizable{
 
   def apply(t:(ParamName,Int)):Option[IndexedSeq[Double]]
   def apply(p:ParamName):Option[IndexedSeq[Double]]
   def calcSeq:Seq[LikelihoodCalc]
   def getOptParam(p:ParamName,paramIndex:ParamMatcher):Option[IndexedSeq[Double]]
+  def getOptParams(optParams:Seq[(ParamName,ParamMatcher)]):Seq[IndexedSeq[Double]]={
+    optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
+  }
   def logLikelihood:Double
   def setOptParam(p:ParamName,values:IndexedSeq[Double],paramIndex:ParamMatcher):Unit
   import dr.math.{UnivariateFunction,UnivariateMinimum,MultivariateFunction,ConjugateDirectionSearch}
@@ -335,7 +366,7 @@ trait Optimizable{
     def getBestParam:Array[Double]
   }
   def getFunc(optParams:Seq[(ParamName,ParamMatcher)]):Either[UnivariateFunction,ModiphyMultivariateFunction]={
-  val start = optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
+  val start = getOptParams(optParams)
     val lengths = start.map{_.length}
     val startArray = start.flatten.toArray
     val numArguments = startArray.length
@@ -345,6 +376,7 @@ trait Optimizable{
     if (numArguments > 1){
       var bestlnL = -1E100
       var bestParam:Array[Double]=startArray
+      var count=0
       val func = new ModiphyMultivariateFunction{
         val lowerBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.lower(i)}}.flatten
         val upperBound = optParams.zip(lengths).map{t=> val ((pName,pIndex),len) = t; (0 until len).map{i=> pName.upper(i)}}.flatten
@@ -354,17 +386,25 @@ trait Optimizable{
         def getUpperBound(i:Int)=upperBound(i)
         val getNumArguments = numArguments
         def evaluate(params:Array[Double])={
+          if (params.find(_.isNaN).isDefined){
+            error("optimiser supplied NaN! " + params.mkString(" "))
+          }
           var p2 = params.toList
           val splitP = lengths.map{l=> val ans = p2.take(l).toIndexedSeq; p2 = p2.drop(l); ans}
           optParams.zip(splitP).foreach{ t=> val ((pName,pIndex),values)=t
             setOptParam(pName,values,pIndex)
           }
-          val ans = logLikelihood
+          val ans = try {
+            logLikelihood
+          }catch {
+            case e:Exception=>Double.NaN
+          }
           if (ans > bestlnL){
             bestParam = params
             bestlnL = ans
           }
-          println("OPT " + optParams + " " + params.toList + " " + ans)
+          println("OPT " + count + " " + optParams + " " + params.toList + " " + ans)
+          count=count+1
           if (ans.isNaN){
             1E100
           }else {
@@ -392,11 +432,11 @@ trait Optimizable{
   }
 
   
-  def optimiseAll(list:ParamName*){optimiseSeq(list.map{(_,MatchAll)})}
-  def optimise(list:(ParamName,ParamMatcher)*){optimiseSeq(list)}
-  def optimiseSeq(optParams:Seq[(ParamName,ParamMatcher)]){
+  def optimiseAll(list:ParamName*){optimise(list.map{(_,MatchAll)})}
+  def optimise(list:(ParamName,ParamMatcher)*){optimise(list)}
+  def optimise(optParams:Seq[(ParamName,ParamMatcher)])(implicit p:Manifest[Seq[(ParamName,ParamMatcher)]]){
     val eitherFunc = getFunc(optParams)
-    val start = optParams.map{t=> getOptParam(t._1,t._2).getOrElse(error("Can't find param " + t))}
+    val start = getOptParams(optParams)
     val startArray = start.flatten.toArray
     eitherFunc match {
       case Left(func)=>
@@ -407,15 +447,52 @@ trait Optimizable{
       case Right(func) => 
         println("Opt multiple")
         val search = new ConjugateDirectionSearch
-        search.optimize(func,startArray,1E-4,1E-3)
-        println("Best " + func.getBestParam.toList + " " + func.evaluate(func.getBestParam))
+        val ans = safeOpt(search,func,startArray)
+        if (ans.isDefined){
+          println("Best " + func.getBestParam.toList + " " + func.evaluate(func.getBestParam))
+        }else {
+          error("Can't Optimise")
+        }
+
     }
 
       
   }
 
+  def randomise(list:(ParamName,ParamMatcher)*){
+    randomise(list)
+  }
+  def randomise(s:Seq[(ParamName,ParamMatcher)])(implicit p:Manifest[Seq[(ParamName,ParamMatcher)]]){
+    val params = getOptParams(s)
+    s.zip(params).foreach{ t => val(pT,start)=t
+      setOptParam(pT._1, pT._1.getRand(start), pT._2)
+    }
+  }
+  import scala.annotation.tailrec
+
+  @tailrec
+  final def safeOpt(search:ConjugateDirectionSearch,func:ModiphyMultivariateFunction,startArray:Array[Double]):Option[Seq[Double]]={
+    val ans = 
+    try {
+      search.optimize(func,startArray.clone,1E-4,1E-3)
+      Some(func.getBestParam.toList)
+    }catch {
+      case e:Exception=>
+      println(e)
+      None
+    }
+    if (ans.isDefined){
+      ans
+    }else if (func.getBestParam!=startArray){
+      println("Restarting with " + func.getBestParam.mkString(" ") + "(startarray = " + startArray.mkString(" ") + ")")
+      safeOpt(search,func,func.getBestParam)
+    }else {
+      None
+    }
+  }
+
+  def toXML:scala.xml.Elem
 
 }
-
 
 

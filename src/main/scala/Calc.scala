@@ -166,6 +166,9 @@ trait LikelihoodCalc{
          {tree.toString}
        </tree>
        {model.toXML}
+       <log-likelihood>
+         {logLikelihood}
+       </log-likelihood>
      </calc>
 }
 class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{

@@ -4,6 +4,7 @@ sealed trait Node{
   def allMySubTrees:Set[NonRoot]
   def numNodes:Int
   def numLeaves:Int
+  def parentOf:Map[Node,Node]
 }
 sealed trait NonRoot extends Node{
   def reRoot(parent:Root):Option[Root]
@@ -82,11 +83,22 @@ case class SubTree(children:Set[NonRoot]) extends NonRoot{
   def numLeaves = children.foldLeft(0){_+_.numLeaves}
   def leaves = children.map{_.leaves}.reduceLeft(_++_)
 
+  lazy val parentOf:Map[Node,Node]={
+    val start = children.map{_.parentOf}.reduceLeft{_++_}
+    children.foldLeft(start){(m,c)=> m.updated(c,this)}
+  }
 }
 object Root{
   def apply(c1:NonRoot,c2:NonRoot,c3:NonRoot):Root=Root(Set(c1,c2,c3))
 }
 case class Root(children:Set[NonRoot]) extends Node{
+
+   lazy val parentOf:Map[Node,Node]={
+    val start = children.map{_.parentOf}.reduceLeft{_++_}
+    children.foldLeft(start){(m,c)=> m.updated(c,this)}
+  }
+ 
+
   def childReRoot(n:NonRoot):Option[Root] = n match {
     case t:SubTree if (children(t))=> t.toRoot(SubTree(children-t))
     case _ => None
@@ -166,6 +178,7 @@ case class Leaf(name:String) extends NonRoot{
   def numNodes=1
   def numLeaves=1
   def leaves = Set(this)
+  val parentOf=Map[Node,Node]()
 }
 
 object TreeTest{
@@ -228,6 +241,7 @@ case class Tree(root:Root,bl:IndexedSeq[Double]){
     val set = s.map{Leaf(_)}.toSet
     leaves.filterNot(set.contains).foldLeft(this){(tree,leaf)=> tree.drop(leaf)}
   }
+  def parentOf(n:Node)=root parentOf n
 }
 object Tree{
   def apply(newick:String):Tree = {

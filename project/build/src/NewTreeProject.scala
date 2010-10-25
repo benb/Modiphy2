@@ -4,7 +4,7 @@ import java.io.File
 
 
 class NewTreeProject(info: ProjectInfo) extends DefaultProject(info) {
-  override def compileOptions = super.compileOptions ++ Seq(Unchecked)
+  override def compileOptions = Seq(Unchecked,Optimize) ++ super.compileOptions 
 
   val scalaToolsSnapshots = "Scala-Tools Maven2 Snapshots Repository" at "http://scala-tools.org/repo-snapshots"
   val clojars = "Clojars Maven2 Repository" at "http://clojars.org/repo/"

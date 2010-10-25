@@ -5,7 +5,7 @@ import modiphy.calc._
 import modiphy.util._
 import scala.collection.LinearSeq
 import modiphy.opt._
-import modiphy.alignment.{Alphabet,Alignment}
+import modiphy.alignment.{Alphabet,SequenceAlignment}
 import modiphy.math._
 
 object Types{
@@ -33,7 +33,7 @@ class ParametersWrapper(par:Parameters){
  large rate matrix. 
 */
 trait Model{
-  def likelihoodCalc(t:Tree,aln:Alignment):LikelihoodCalc
+  def likelihoodCalc(t:Tree,aln:SequenceAlignment):LikelihoodCalc
   def applies(p:ParamName,pM:ParamMatcher):Boolean
   def specialUpdate:PartialFunction[(ParamName,IndexedSeq[Double]),Option[Model]]={case _ => None}
   def params:scala.collection.Set[ParamName]
@@ -355,7 +355,7 @@ trait UsefulWrappedModel extends UsefulModelUtil{
 
 trait UsefulMixtureModel extends UsefulWrappedModel{
 
- def likelihoodCalc(t:Tree,aln:Alignment) = new MixtureLikelihoodCalc(t,aln,this)
+ def likelihoodCalc(t:Tree,aln:SequenceAlignment) = new MixtureLikelihoodCalc(t,aln,this)
   override def add(model:Model,prior:Double,newModelIndex:Int = modelIndex)={
     if (modelIndex==newModelIndex){
       val newPriors = priors.map{_*(1.0-prior)} :+ prior
@@ -400,7 +400,7 @@ trait UsefulSingleModel extends UsefulModelUtil{
  def pis = List(pi)
  def numClasses =1
  def mats = List(mat)
- def likelihoodCalc(t:Tree,aln:Alignment) = new SimpleLikelihoodCalc(t,aln,this)
+ def likelihoodCalc(t:Tree,aln:SequenceAlignment) = new SimpleLikelihoodCalc(t,aln,this)
 }
 trait UsefulModel extends UsefulSingleModel{
  def add(m:Model,prior:Double,addedIndex:Int) = {

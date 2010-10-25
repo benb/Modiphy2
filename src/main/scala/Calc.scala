@@ -22,7 +22,6 @@ object Parallel{
 }
 
 object LikelihoodTypes{
-  type Pattern=Int=>Letter
   type PartialLikelihoods = LinearSeq[Double]
   type Likelihood = Double
   type LogLikelihood = Double
@@ -48,7 +47,7 @@ object IndexedSeqLikelihoodFactory extends LikelihoodFactory{
   def apply=new IndexedSeqLikelihoodCalc
 }
 
-class MixtureLikelihoodCalc(val tree:Tree,val aln:Alignment,m:Model,lkl:Option[Seq[LikelihoodCalc]]=None) extends LikelihoodCalc{
+class MixtureLikelihoodCalc(val tree:Tree,val aln:SequenceAlignment,m:Model,lkl:Option[Seq[LikelihoodCalc]]=None) extends LikelihoodCalc{
   def priors = m.priors
   val models = m.models
   val lklCalc = lkl.getOrElse{models.map{_.likelihoodCalc(tree,aln)}}
@@ -158,7 +157,7 @@ trait LikelihoodCalc{
    def posteriors:Seq[Seq[Double]]
    def componentLikelihoods:List[List[_]]
    def flatComponentLikelihoods:LinearSeq[LinearSeq[Double]]
-   def aln:Alignment
+   def aln:SequenceAlignment
    def tree:Tree
    def toXML=
      <calc>
@@ -171,8 +170,8 @@ trait LikelihoodCalc{
        </log-likelihood>
      </calc>
 }
-class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
-  def this(tree:Tree,aln:Alignment,m:Model)=this(tree,m,aln)
+class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:SequenceAlignment,val engine:LikelihoodEngine=DefaultLikelihoodFactory.apply) extends LikelihoodCalc{
+  def this(tree:Tree,aln:SequenceAlignment,m:Model)=this(tree,m,aln)
   import SimpleLikelihoodCalc._
   
   import engine.combinePartialLikelihoods
@@ -273,7 +272,7 @@ class SimpleLikelihoodCalc(val tree:Tree,m:Model,val aln:Alignment,val engine:Li
   }*/
 
 
-  def factory(t:Tree,m:Model,aln:Alignment) = new SimpleLikelihoodCalc(t,m,aln)
+  def factory(t:Tree,m:Model,aln:SequenceAlignment) = new SimpleLikelihoodCalc(t,m,aln)
 
   def updated(t:Tree)={
     /*

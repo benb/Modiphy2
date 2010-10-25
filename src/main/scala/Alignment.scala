@@ -21,6 +21,7 @@ object GlobalAlphabet{
     def isReal=l.alphabet.isReal(l.asInstanceOf[l.alphabet.Letter])
   }
   implicit def MakeLetter(l:Alphabet#Letter)=EnhancedLetter(l)
+  type Pattern=IndexedSeq[Letter]
 }
 
 import GlobalAlphabet._
@@ -45,35 +46,15 @@ object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K
 }
 
 
-class Alignment(gen:Map[String,Iterable[Letter]]){
+class Alignment(gen:Map[String,Iterable[Letter]]) extends SequenceAlignment{
   val names = gen.keys.toList
-  val seqId:Map[String,Int]=names.zipWithIndex.foldLeft(Map[String,Int]()){_+_}
   def numSeqs = gen.size
-  type Pattern=IndexedSeq[Letter]
   val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Pattern]()){(ml,col)=>
     col.toIndexedSeq :: ml
   }.reverse
-  lazy val (patterns,patternLength)={
-  var len = 0
-  val ans = columns.foldLeft(Map[Pattern,Int]()){(m,col)=>
-    m.updated(col,m.getOrElse(col,{len=len+1;0})+1)
-  }.toList
-  (ans,len)
-}
-  lazy val patternList={ patterns.toList.map{_._1} }
-  lazy val countList=patterns.toList.map{_._2}
-  def apply(s:String)=gen(s)
-  lazy val frequencies={
-    var countMap=Map[Letter,Int]()
-    columns.map{p:Pattern=>
-      countMap = p.foldLeft(countMap){(m,letter)=>
-        m updated (letter,m.getOrElse(letter,0)+1) 
-      }
-    }
-    val total = countMap.filter{_._1.isReal}.values.reduceLeft(_+_)
-    alphabet.matElements.map{countMap.getOrElse(_,0)}.map{_.toDouble/total}
-  }.toIndexedSeq
-  def restrictTo(seqs:Iterable[String])={
+
+  def apply(s:String):Iterable[Letter]=gen(s)
+  def restrictTo(seqs:Iterable[String]):Alignment={
     val newGen = gen.filter{t=>seqs exists{_==t._1}}
     if (newGen==gen){this}else { new Alignment(gen.filter{t=>seqs exists{_==t._1}})}
   }
@@ -83,6 +64,66 @@ class Alignment(gen:Map[String,Iterable[Letter]]){
     }
   }
   lazy val alphabet = gen(names.head).head.alphabet
+  lazy val (patterns,patternLength)={
+    var len = 0
+    val ans = columns.foldLeft(Map[Pattern,Int]()){(m,col)=>
+      m.updated(col,m.getOrElse(col,{len=len+1;0})+1)
+    }.toList
+    (ans,len)
+  }
+  lazy val patternList={ patterns.toList.map{_._1} }
+  lazy val countList=patterns.toList.map{_._2}
+ 
+}
+class UnorderedAlignment(val names:List[String],val patternList:List[Pattern],val countList:List[Int]) extends SequenceAlignment{
+  lazy val alphabet = patternList.head.head.alphabet
+  lazy val numSeqs = names.length
+  def columns = patternList.zip(countList).flatMap{t=> (0 until t._2).map{i=> t._1}}
+  def apply(s:String)={
+    val id = seqId(s)
+    columns.map{_(id)}
+  }
+  def toFasta={
+    names.map{name=>">"+name+"\n" + apply(name).mkString("")}.mkString("\n")
+  }
+  def restrictTo(seqs:Iterable[String])={
+    val seqList = seqs.toList
+    val allowed = names.map{seqList.contains}
+    def filt[A](l:List[A]):List[A]={
+      l.zip(allowed).filter{_._2}.map{_._1}
+    }
+    val newPatternList = patternList.map{ _.zip(allowed).filter{_._2}.map{_._1}}
+    val finalPatternMap = patternList.zip(countList).foldLeft(Map[Pattern,Int]()){(m,t)=>
+      m.updated(t._1, m.getOrElse(t._1,0) + t._2)
+    }
+    val finalPatternList = finalPatternMap.keys.toList
+    val finalPatternCount = finalPatternMap.values.toList
+    new UnorderedAlignment(filt(names), finalPatternList, finalPatternCount)
+  }
+  lazy val patternLength = patternList.length
+}
+trait SequenceAlignment{
+  def names:List[String]
+  def numSeqs:Int
+  def columns:Seq[Pattern]
+  def apply(s:String):Iterable[Letter]
+  def restrictTo(seqs:Iterable[String]):SequenceAlignment
+  def toFasta:String
+  def alphabet:Alphabet
+  def patternList:List[Pattern]
+  def countList:List[Int]
+  def patternLength:Int
+  lazy val seqId:Map[String,Int]=names.zipWithIndex.foldLeft(Map[String,Int]()){_+_}
+ lazy val frequencies={
+    var countMap=Map[Letter,Int]()
+    columns.map{p:Pattern=>
+      countMap = p.foldLeft(countMap){(m,letter)=>
+        m updated (letter,m.getOrElse(letter,0)+1) 
+      }
+    }
+    val total = countMap.filter{_._1.isReal}.values.reduceLeft(_+_)
+    alphabet.matElements.map{countMap.getOrElse(_,0)}.map{_.toDouble/total}
+  }.toIndexedSeq
 }
 
 class Fasta(source:Iterator[String]) extends Iterator[(String,String)]{

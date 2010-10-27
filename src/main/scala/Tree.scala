@@ -185,6 +185,7 @@ object TreeTest{
   implicit def toLeaf(s:String)=Leaf(s)
   implicit def toSubTree(t:(NonRoot,NonRoot))=SubTree(t._1,t._1)
   def main(args:Array[String]){
+    /*
     val t1 = Root(SubTree(SubTree("onea","oneb"),"two"),SubTree(SubTree("threea","threeb"),"four"),SubTree("five","six"))
     println(t1)
     println(t1.allRootedChildren)
@@ -193,6 +194,29 @@ object TreeTest{
     println(t1.allRootedTrees.mkString("\n"))
     println(t1.branchLengthString((0.0 to 2.0 by 0.1).toIndexedSeq))
     println(t1.allRootedChildren.toList(2).branchLengthString((0.0 to 2.0 by 0.1).toIndexedSeq))
+    */
+    import modiphy.test.ModelData._
+    import modiphy.math.constants._
+    import modiphy.model._
+    import modiphy.alignment._
+    import modiphy.opt._
+    import modiphy.calc._
+    import modiphy.model.Types._
+
+
+
+    val tree = Tree(treeStr)
+    val aln = Fasta(alnStr).parseWith(AminoAcid)
+    val model = new GammaModel(
+      (Rate << 1.0) + (Pi << WAG.pi) + (S << WAG.S) + (Gamma << 1.0), 0,cleanCache,4
+    )
+    val lkl =  model.likelihoodCalc(tree,aln)
+    val opt = new OptModel(lkl,tree,aln)
+
+    (0.01 until 3.0 by 0.01).foreach{i=>
+      opt(Gamma)=i
+      println(i + " " +  opt.logLikelihood)
+    }
   }
 }
 

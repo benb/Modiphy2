@@ -16,6 +16,7 @@ object Types{
   val cleanCache = Map[Symbol,Any]()
   implicit def WrapParam(p:Parameters)=new ParametersWrapper(p)
   implicit def MakeParamMap(l:List[(ParamName,IndexedSeq[Double])])=l.toMap
+  implicit def MakeParamMap(l:(ParamName,IndexedSeq[Double]))=Map(l)
 }
 import Types._
 class ParametersWrapper(par:Parameters){

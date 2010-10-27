@@ -84,7 +84,7 @@ class UnorderedAlignment(val names:List[String],val patternList:List[Pattern],va
     columns.map{_(id)}
   }
   def toFasta={
-    names.map{name=>">"+name+"\n" + apply(name).mkString("")}.mkString("\n")
+    names.map{name=>">"+name+"\n" + apply(name).mkString("").grouped(80).mkString("\n")}.mkString("\n")
   }
   def restrictTo(seqs:Iterable[String])={
     val seqList = seqs.toList

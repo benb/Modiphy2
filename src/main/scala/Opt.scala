@@ -152,6 +152,11 @@ object MatchSet{
   }
 }
 
+object FormatLogLikelihood{
+  lazy val formatter = new java.text.DecimalFormat("#.#######")
+  def apply(d:Double)=formatter.format(d)
+}
+
 class JointOptModel(val l:IndexedSeq[OptModel]) extends Optimizable{
 
   val numBL = l.map{_.tree.getBranchLengths.length}
@@ -404,7 +409,7 @@ trait Optimizable{
             bestParam = params
             bestlnL = ans
           }
-          println("OPT " + count + " " + optParams + " " + params.toList + " " + ans)
+          println("OPT " + count + " " + optParams + " " + params.toList + " " + FormatLogLikelihood(ans))
           count=count+1
           if (ans.isNaN){
             1E100
@@ -424,7 +429,7 @@ trait Optimizable{
         def evaluate(p:Double)={
           setOptParam(paramName,Vector(p),paramIndex)
           val ans = logLikelihood
-          println("OPT " + p + " " + ans)
+          println("OPT " + p + " " + FormatLogLikelihood(ans))
           -ans
         }
       }

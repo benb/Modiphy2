@@ -3,8 +3,11 @@ import java.io.File
 
 
 
-class NewTreeProject(info: ProjectInfo) extends DefaultProject(info) {
-  override def compileOptions = Seq(Unchecked,Optimize) ++ super.compileOptions 
+class NewTreeProject(info: ProjectInfo) extends DefaultProject(info) { //with AutoCompilerPlugins {
+  override def compileOptions = super.compileOptions ++ Seq(Unchecked,Optimize) 
+
+//  val nativelibs4javaRepo = "NativeLibs4Java Repository" at "http://nativelibs4java.sourceforge.net/maven/"
+//  val scalacl = compilerPlugin("com.nativelibs4java" % "scalacl-compiler-plugin" % "1.0-SNAPSHOT") // or "1.0-SNAPSHOT" to get the latest development version
 
   val scalaToolsSnapshots = "Scala-Tools Maven2 Snapshots Repository" at "http://scala-tools.org/repo-snapshots"
   val clojars = "Clojars Maven2 Repository" at "http://clojars.org/repo/"

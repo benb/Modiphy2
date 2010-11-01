@@ -49,9 +49,9 @@ object AminoAcid extends Alphabet("A","R","N","D","C","Q","E","G","H","I","L","K
 class Alignment(gen:Map[String,Iterable[Letter]]) extends SequenceAlignment{
   val names = gen.keys.toList
   def numSeqs = gen.size
-  val columns:Seq[Pattern] = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Pattern]()){(ml,col)=>
+  val columns = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Pattern]()){(ml,col)=>
     col.toIndexedSeq :: ml
-  }.reverse
+  }.toIndexedSeq
 
   def apply(s:String):Iterable[Letter]=gen(s)
   def restrictTo(seqs:Iterable[String]):Alignment={
@@ -78,7 +78,7 @@ class Alignment(gen:Map[String,Iterable[Letter]]) extends SequenceAlignment{
 class UnorderedAlignment(val names:List[String],val patternList:List[Pattern],val countList:List[Int]) extends SequenceAlignment{
   lazy val alphabet = patternList.head.head.alphabet
   lazy val numSeqs = names.length
-  def columns = patternList.zip(countList).flatMap{t=> (0 until t._2).map{i=> t._1}}
+  lazy val columns = patternList.zip(countList).flatMap{t=> (0 until t._2).map{i=> t._1}}.toIndexedSeq
   def apply(s:String)={
     val id = seqId(s)
     columns.map{_(id)}
@@ -105,7 +105,7 @@ class UnorderedAlignment(val names:List[String],val patternList:List[Pattern],va
 trait SequenceAlignment{
   def names:List[String]
   def numSeqs:Int
-  def columns:Seq[Pattern]
+  def columns:IndexedSeq[Pattern]
   def apply(s:String):Iterable[Letter]
   def restrictTo(seqs:Iterable[String]):SequenceAlignment
   def toFasta:String

@@ -406,7 +406,7 @@ trait Optimizable{
             case e:Exception=>Double.NaN
           }
           if (ans > bestlnL){
-            bestParam = params
+            bestParam = params.clone
             bestlnL = ans
           }
           println("OPT " + count + " " + optParams + " " + params.toList + " " + FormatLogLikelihood(ans))

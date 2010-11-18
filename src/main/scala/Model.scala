@@ -7,6 +7,7 @@ import scala.collection.LinearSeq
 import modiphy.opt._
 import modiphy.alignment.{Alphabet,SequenceAlignment}
 import modiphy.math._
+import scala.xml.Elem
 
 object Types{
   type Matrix=IndexedSeq[IndexedSeq[Double]]
@@ -63,7 +64,7 @@ trait Model{
     val inPi = pi.map{_/n}
     (0 until n).map{i=>inPi}.flatten
   }
-  def toXML = <model>
+  def toXML:Elem = <model>
   <name>
     {this.getClass.toString}
   </name>
@@ -134,7 +135,7 @@ class ThmmSiteClassModel(val parameters:Parameters,val modelIndex:Int,realSwitch
 }
 
 
-class StdSiteClassModel(val parameters:Parameters,val modelIndex:Int,val subModels:Seq[Model],var cache:CalcCache=cleanCache) extends UsefulMixtureModel{
+class StdSiteClassModel(val parameters:Parameters,val modelIndex:Int,val subModels:Seq[Model],var cache:CalcCache=cleanCache) extends UsefulSubMixtureModel{
 //  def this(val subModel:Seq[Model],val priors:IndexedSeq[Double],val modelIndex:Int=0,
  //   var cachedMat:Option[IndexedSeq[IndexedSeq[Double]]],var cachedExp:Option[Exp],override val rate:Double=1.0)
  //  = 
@@ -354,9 +355,20 @@ trait UsefulWrappedModel extends UsefulModelUtil{
 }
 
 
+trait UsefulSubMixtureModel extends UsefulMixtureModel{
+override def toXML = {
+   val start = super.toXML
+   val sub=subModels.map{_.toXML}
+   start match {
+     case Elem(prefix, label, attribs, scope, child @ _*) =>
+         Elem(prefix, label, attribs, scope, child ++ sub : _*)
+   }
+ }
+
+}
 trait UsefulMixtureModel extends UsefulWrappedModel{
 
- def likelihoodCalc(t:Tree,aln:SequenceAlignment) = new MixtureLikelihoodCalc(t,aln,this)
+  def likelihoodCalc(t:Tree,aln:SequenceAlignment) = new MixtureLikelihoodCalc(t,aln,this)
   override def add(model:Model,prior:Double,newModelIndex:Int = modelIndex)={
     if (modelIndex==newModelIndex){
       val newPriors = priors.map{_*(1.0-prior)} :+ prior

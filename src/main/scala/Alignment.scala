@@ -51,7 +51,7 @@ class Alignment(gen:Map[String,Iterable[Letter]]) extends SequenceAlignment{
   def numSeqs = gen.size
   val columns = FlippedIterator(names.map{gen}.map{_.iterator}).map{_.toList}.foldLeft(List[Pattern]()){(ml,col)=>
     col.toIndexedSeq :: ml
-  }.toIndexedSeq
+  }.toIndexedSeq.reverse
 
   def apply(s:String):Iterable[Letter]=gen(s)
   def restrictTo(seqs:Iterable[String]):Alignment={
@@ -102,6 +102,7 @@ class UnorderedAlignment(val names:List[String],val patternList:List[Pattern],va
   }
   lazy val patternLength = patternList.length
 }
+@serializable
 trait SequenceAlignment{
   def names:List[String]
   def numSeqs:Int

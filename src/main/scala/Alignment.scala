@@ -88,17 +88,15 @@ class UnorderedAlignment(val names:List[String],val patternList:List[Pattern],va
   }
   def restrictTo(seqs:Iterable[String])={
     val seqList = seqs.toList
-    val allowed = names.map{seqList.contains}
-    def filt[A](l:List[A]):List[A]={
-      l.zip(allowed).filter{_._2}.map{_._1}
+    val newPatternList = patternList.map{ pattern=>
+       seqs.map{seqId}.map{pattern}.toIndexedSeq
     }
-    val newPatternList = patternList.map{ _.zip(allowed).filter{_._2}.map{_._1}}
-    val finalPatternMap = patternList.zip(countList).foldLeft(Map[Pattern,Int]()){(m,t)=>
+    val finalPatternMap = newPatternList.zip(countList).foldLeft(Map[Pattern,Int]()){(m,t)=>
       m.updated(t._1, m.getOrElse(t._1,0) + t._2)
     }
     val finalPatternList = finalPatternMap.keys.toList
     val finalPatternCount = finalPatternMap.values.toList
-    new UnorderedAlignment(filt(names), finalPatternList, finalPatternCount)
+    new UnorderedAlignment(seqs.toList, finalPatternList, finalPatternCount)
   }
   lazy val patternLength = patternList.length
 }
